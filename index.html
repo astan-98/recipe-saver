@@ -341,7 +341,7 @@ a { color: var(--accent); }
   <section class="tabs-panel active" id="tab-recipes" data-tab="recipes">
     <button type="button" class="tonight-btn" id="tonightBtn">🍽 What can I make tonight?</button>
     <div class="search-row">
-      <input type="search" id="searchInput" placeholder="Search recipes…" autocomplete="off" enterkeyhint="search">
+      <input type="search" id="searchInput" placeholder="Enter text here" autocomplete="off" enterkeyhint="search">
     </div>
     <div id="backupBanner" class="backup-banner hidden">
       <p>💾 It's been a while — export a JSON backup so your recipes stay safe.</p>
@@ -407,7 +407,7 @@ a { color: var(--accent); }
     <div class="form-row" style="margin-bottom:12px">
       <div class="form-group" style="margin:0">
         <label for="pantryNameIn">Item</label>
-        <input id="pantryNameIn" placeholder="e.g. brisket">
+        <input id="pantryNameIn" placeholder="Enter text here">
       </div>
       <div class="form-group" style="margin:0">
         <label for="pantryQtyIn">Portions</label>
@@ -665,7 +665,7 @@ a { color: var(--accent); }
         if (parsed && typeof parsed === 'object') {
           state = {
             app: 'recipe-saver', version: 2,
-            recipes: Array.isArray(parsed.recipes) ? parsed.recipes : [],
+            recipes: Array.isArray(parsed.recipes) ? parsed.recipes.map(normalizeRecipe) : [],
             pantry: Array.isArray(parsed.pantry) ? parsed.pantry : [],
             mealPlan: parsed.mealPlan && typeof parsed.mealPlan === 'object' ? parsed.mealPlan : {},
             lastExportAt: parsed.lastExportAt || null,
@@ -691,8 +691,15 @@ a { color: var(--accent); }
     const now = new Date().toISOString();
     let steps = [];
     if (Array.isArray(r.steps)) steps = r.steps.map(s => String(s || '').trim()).filter(Boolean);
-    else if (typeof r.stepsText === 'string' && r.stepsText.trim()) {
+    else if (typeof r.steps === 'string' && r.steps.trim()) {
+      steps = r.steps.split(/\n+/).map(s => s.trim()).filter(Boolean);
+    } else if (typeof r.stepsText === 'string' && r.stepsText.trim()) {
       steps = r.stepsText.split(/\n+/).map(s => s.trim()).filter(Boolean);
+    }
+    let ingredients = [];
+    if (Array.isArray(r.ingredients)) ingredients = r.ingredients.map(normalizeIng);
+    else if (typeof r.ingredients === 'string' && r.ingredients.trim()) {
+      ingredients = parseIngredientsText(r.ingredients);
     }
     const missing = Array.isArray(r.missingIngredients) ? r.missingIngredients.map(normName).filter(Boolean) : [];
     const customSubs = r.customSubstitutions && typeof r.customSubstitutions === 'object' ? r.customSubstitutions : {};
@@ -703,7 +710,7 @@ a { color: var(--accent); }
       platform: r.platform || detectPlatform(r.url || ''),
       category: r.category || '',
       notes: r.notes || '',
-      ingredients: Array.isArray(r.ingredients) ? r.ingredients.map(normalizeIng) : [],
+      ingredients,
       steps,
       servingsDefault: r.servingsDefault != null ? Number(r.servingsDefault) : (r.servings != null ? Number(r.servings) : null),
       modifications: r.modifications || '',
@@ -796,7 +803,8 @@ a { color: var(--accent); }
   }
 
   function ingredientsToText(ings) {
-    return (ings || []).map(i => i.raw || [i.qty, i.unit, i.name].filter(Boolean).join(' ')).join('\n');
+    const arr = Array.isArray(ings) ? ings : (typeof ings === 'string' ? parseIngredientsText(ings) : []);
+    return arr.map(i => (typeof i === 'string' ? i : (i.raw || [i.qty, i.unit, i.name].filter(Boolean).join(' ')))).join('\n');
   }
 
   function formatQty(n) {
@@ -959,7 +967,7 @@ a { color: var(--accent); }
       return ings.every(ing =>
         state.pantry.some(p => (Number(p.qty) || 0) > 0 && namesOverlap(p.name, ing.name || ing.raw))
       );
-    }).sort((a, b) => a.name.localeCompare(b.name));
+    }).sort((a, b) => recipeNameCmp(a, b));
   }
   function openTonightSheet() {
     const list = recipesICanMakeTonight();
@@ -1002,7 +1010,7 @@ a { color: var(--accent); }
       <h2>Staple prices</h2>
       <p class="form-hint" style="margin-bottom:8px">Optional US averages for cost estimates. Set what you pay locally — that override applies to every recipe using that ingredient. Never required.</p>
       <div class="form-group"><label for="priceSearch">Find staple</label>
-        <input id="priceSearch" value="${esc(ui.priceFilter || '')}" placeholder="e.g. gold potatoes" autocomplete="off"></div>
+        <input id="priceSearch" value="${esc(ui.priceFilter || '')}" placeholder="Enter text here" autocomplete="off"></div>
       <div style="max-height:50vh;overflow:auto">${rows || '<p class="form-hint">No matches</p>'}</div>
       <div class="form-actions">
         <button class="btn btn-secondary" type="button" id="resetAllPricesBtn">Clear overrides</button>
@@ -1377,7 +1385,9 @@ a { color: var(--accent); }
     return String(text || '').split(/\n+/).map(s => s.trim()).filter(Boolean);
   }
   function stepsToText(steps) {
-    return (steps || []).join('\n');
+    if (Array.isArray(steps)) return steps.map(s => String(s || '')).join('\n');
+    if (typeof steps === 'string') return steps;
+    return '';
   }
 
   function stepHasInlineQty(step, ing) {
@@ -1755,18 +1765,32 @@ a { color: var(--accent); }
     ui.cook = { recipeId: null, steps: [], index: 0 };
   }
 
+  function recipeNameCmp(a, b) {
+    return String(a && a.name || '').localeCompare(String(b && b.name || ''));
+  }
+
   function filteredRecipes() {
     const q = ui.search.trim().toLowerCase();
     let list = (ui.showArchive ? archivedRecipes() : activeRecipes()).slice();
     if (q) {
       list = list.filter(r => {
-        const blob = [
-          r.name, r.notes, r.category, r.url, r.modifications, r.ratingNote,
-          r.cuisine, r.occasion, r.difficulty,
-          ...(r.ingredients || []).map(i => i.raw || i.name),
-          ...(r.steps || [])
-        ].join(' ').toLowerCase();
-        return blob.includes(q);
+        try {
+          const ings = Array.isArray(r.ingredients)
+            ? r.ingredients
+            : (typeof r.ingredients === 'string' ? [r.ingredients] : []);
+          const steps = Array.isArray(r.steps)
+            ? r.steps
+            : (typeof r.steps === 'string' ? String(r.steps).split(/\n+/) : []);
+          const blob = [
+            r.name, r.notes, r.category, r.url, r.modifications, r.ratingNote,
+            r.cuisine, r.occasion, r.difficulty,
+            ...ings.map(i => typeof i === 'string' ? i : (i && (i.raw || i.name) || '')),
+            ...steps.map(s => String(s || ''))
+          ].join(' ').toLowerCase();
+          return blob.includes(q);
+        } catch (e) {
+          return false;
+        }
       });
     }
     if (ui.protein.size) {
@@ -1824,28 +1848,28 @@ a { color: var(--accent); }
         list.sort((a, b) => {
           const am = a.cookMinutes == null ? Infinity : a.cookMinutes;
           const bm = b.cookMinutes == null ? Infinity : b.cookMinutes;
-          if (am === bm) return a.name.localeCompare(b.name);
+          if (am === bm) return recipeNameCmp(a, b);
           return am - bm;
         });
         break;
       case 'az':
-        list.sort((a, b) => a.name.localeCompare(b.name));
+        list.sort((a, b) => recipeNameCmp(a, b));
         break;
       case 'difficulty':
         list.sort((a, b) => {
           const ad = DIFFICULTY_RANK[a.difficulty] || 99;
           const bd = DIFFICULTY_RANK[b.difficulty] || 99;
           if (ad !== bd) return ad - bd;
-          return a.name.localeCompare(b.name);
+          return recipeNameCmp(a, b);
         });
         break;
       case 'pantry':
-        list.sort((a, b) => getMatch(b).pct - getMatch(a).pct || a.name.localeCompare(b.name));
+        list.sort((a, b) => getMatch(b).pct - getMatch(a).pct || recipeNameCmp(a, b));
         break;
       case 'date':
       case 'recent':
       default:
-        list.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '') || a.name.localeCompare(b.name));
+        list.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '') || recipeNameCmp(a, b));
     }
     return list;
   }
@@ -1935,12 +1959,27 @@ a { color: var(--accent); }
     const list = filteredRecipes();
     const box = $('#recipeCards');
     if (!list.length) {
-      box.innerHTML = ui.showArchive
-        ? `<div class="empty"><strong>Archive empty</strong>Swipe-delete moves recipes here.</div>`
-        : `<div class="empty"><strong>No recipes yet</strong>Tap + Add to save your first dish link.</div>`;
+      const pool = ui.showArchive ? archivedRecipes() : activeRecipes();
+      const filtersActive = !!(
+        (ui.search || '').trim() ||
+        ui.protein.size || ui.cuisine.size || ui.occasion.size ||
+        ui.difficulty.size || ui.cook.size || ui.cost.size
+      );
+      if (ui.showArchive && !pool.length) {
+        box.innerHTML = `<div class="empty"><strong>Archive empty</strong>Swipe-delete moves recipes here.</div>`;
+      } else if (!pool.length) {
+        box.innerHTML = `<div class="empty"><strong>No recipes yet</strong>Tap + Add to save your first dish link.</div>`;
+      } else if (filtersActive) {
+        box.innerHTML = `<div class="empty"><strong>No matches</strong>Nothing matches your search or filters. Tap Clear filters to show all recipes.<br><button type="button" class="btn btn-secondary btn-sm" id="clearFiltersBtn" style="margin-top:10px">Clear filters</button></div>`;
+      } else {
+        box.innerHTML = `<div class="empty"><strong>No matches</strong>Try clearing filters or search.</div>`;
+      }
       return;
     }
-    box.innerHTML = list.map(cardHtml).join('');
+    box.innerHTML = list.map(r => {
+      try { return cardHtml(r); }
+      catch (e) { return ''; }
+    }).filter(Boolean).join('');
   }
 
   function renderPlan() {
@@ -1977,7 +2016,7 @@ a { color: var(--accent); }
       box.innerHTML = `<div class="empty"><strong>No recipes</strong>Add recipes first.</div>`;
       return;
     }
-    const sorted = recipes.slice().sort((a, b) => a.name.localeCompare(b.name));
+    const sorted = recipes.slice().sort((a, b) => recipeNameCmp(a, b));
     box.innerHTML = sorted.map(r => `
       <div class="select-card">
         <input type="checkbox" id="shop_${esc(r.id)}" data-shop-id="${esc(r.id)}" ${ui.shopSelected.has(r.id) ? 'checked' : ''}>
@@ -2089,11 +2128,11 @@ a { color: var(--accent); }
     return `
       <h2>${r.id ? 'Edit recipe' : 'Add recipe'}</h2>
       <div class="form-group"><label for="fName">Dish name *</label>
-        <input id="fName" required value="${esc(r.name || '')}" placeholder="Loaded Baked Potato Soup"></div>
+        <input id="fName" required value="${esc(r.name || '')}" placeholder="Enter text here"></div>
       <div class="form-group"><label for="fUrl">Source URL *</label>
-        <input id="fUrl" type="url" required value="${esc(r.url || '')}" placeholder="https://…" inputmode="url"></div>
+        <input id="fUrl" type="url" required value="${esc(r.url || '')}" placeholder="Enter text here" inputmode="url"></div>
       <div class="form-group"><label for="fCategory">Tag / category</label>
-        <input id="fCategory" value="${esc(r.category || '')}" placeholder="soup, weeknight…"></div>
+        <input id="fCategory" value="${esc(r.category || '')}" placeholder="Enter text here"></div>
       <div class="form-row">
         <div class="form-group"><label for="fCook">Cook time (min)</label>
           <input id="fCook" type="number" inputmode="numeric" min="0" value="${r.cookMinutes != null ? esc(r.cookMinutes) : ''}"></div>
@@ -2126,19 +2165,19 @@ a { color: var(--accent); }
         </div>
         <input type="hidden" id="fDifficulty" value="${esc(r.difficulty || '')}"></div>
       <div class="form-group"><label for="fNotes">Notes</label>
-        <textarea id="fNotes" placeholder="Optional notes">${esc(r.notes || '')}</textarea></div>
+        <textarea id="fNotes" placeholder="Enter text here">${esc(r.notes || '')}</textarea></div>
       <div class="form-group"><label for="fIngredients">Ingredients (one per line)</label>
-        <textarea id="fIngredients" placeholder="2 cups milk">${esc(ings)}</textarea>
+        <textarea id="fIngredients" placeholder="Enter text here">${esc(ings)}</textarea>
         <div class="form-hint">Extract pulls ingredients &amp; steps from the URL when possible (Safari may block fetch).</div>
         <button class="btn btn-secondary btn-sm" type="button" id="extractBtn" style="margin-top:8px">Extract from URL</button>
       </div>
       <div class="form-group"><label for="fSteps">Cooking steps (one per line)</label>
-        <textarea id="fSteps" placeholder="Preheat oven to 350°F&#10;Add the flour and stir">${esc(stepsTxt)}</textarea>
+        <textarea id="fSteps" placeholder="Enter text here">${esc(stepsTxt)}</textarea>
         <div class="form-hint">Used by Cooking Mode. Extract also fills steps when the recipe page has them.</div>
       </div>
       <div class="form-group"><label for="fMods">My changes / modifications</label>
         <div class="mic-row">
-          <textarea id="fMods" placeholder="e.g. used Meat Church Holy Cow…">${esc(r.modifications || '')}</textarea>
+          <textarea id="fMods" placeholder="Enter text here">${esc(r.modifications || '')}</textarea>
           <button type="button" class="btn-icon mic-btn" id="micBtn" title="Dictate" aria-label="Dictate modifications">${speechOk ? '🎤' : '⌨️'}</button>
         </div>
         <div class="form-hint">${speechOk ? 'Tap mic to dictate (Web Speech API). Tap again to stop.' : 'Voice not available — type your changes.'}</div>
@@ -2288,7 +2327,7 @@ a { color: var(--accent); }
           <button type="button" class="sub-btn" data-toggle-miss="${esc(r.id)}" data-ing="${esc(i.name || i.raw)}">${isMiss ? "Have it" : "Don't have"}</button>
           ${isMiss && sug ? `<div class="form-hint sug">→ ${esc(sug.text)}${sug.detail ? ' — ' + esc(sug.detail) : ''}</div>
             <div class="custom-row" style="display:flex;gap:6px;margin-top:6px">
-              <input data-custom-sub-ing="${esc(i.name || i.raw)}" placeholder="Custom substitute" value="${esc((r.customSubstitutions || {})[key] || '')}">
+              <input data-custom-sub-ing="${esc(i.name || i.raw)}" placeholder="Enter text here" value="${esc((r.customSubstitutions || {})[key] || '')}">
               <button type="button" class="btn btn-secondary btn-sm" data-save-sub="${esc(r.id)}" data-ing="${esc(i.name || i.raw)}">Save</button>
             </div>` : ''}
         </li>`;
@@ -2314,7 +2353,7 @@ a { color: var(--accent); }
       <p class="form-hint" style="margin-bottom:8px">${esc(r.name)}</p>
       <div class="form-group">
         <div class="mic-row">
-          <textarea id="fMods" placeholder="What did you change?">${esc(r.modifications || '')}</textarea>
+          <textarea id="fMods" placeholder="Enter text here">${esc(r.modifications || '')}</textarea>
           <button type="button" class="btn-icon mic-btn" id="micBtn">${speechOk ? '🎤' : '⌨️'}</button>
         </div>
       </div>
@@ -2345,7 +2384,7 @@ a { color: var(--accent); }
       <div class="form-group"><label>Difficulty</label>
         <div class="protein-chips">${diffChips}</div></div>
       <div class="form-group"><label for="fRatingNote">Short note</label>
-        <input id="fRatingNote" value="${esc(r.ratingNote || '')}" placeholder="too salty, cut salt next time"></div>
+        <input id="fRatingNote" value="${esc(r.ratingNote || '')}" placeholder="Enter text here"></div>
       <div class="form-group">
         <label>Photo of finished dish (optional)</label>
         <div class="form-actions" style="margin:0">
@@ -2371,7 +2410,7 @@ a { color: var(--accent); }
       <h2>Recipe cost</h2>
       <p class="form-hint" style="margin-bottom:10px">${esc(r.name)} — optional total you paid (not the $–$$$$ rating).</p>
       <div class="form-group"><label for="fRecipeCost">Total cost ($)</label>
-        <input id="fRecipeCost" type="number" inputmode="decimal" min="0" step="0.01" value="${r.recipeCost != null ? esc(r.recipeCost) : ''}" placeholder="e.g. 24.50"></div>
+        <input id="fRecipeCost" type="number" inputmode="decimal" min="0" step="0.01" value="${r.recipeCost != null ? esc(r.recipeCost) : ''}" placeholder="Enter text here"></div>
       <p class="form-hint">Servings: ${esc(r.servingsDefault != null ? r.servingsDefault : 'not set (uses 1)')}${per != null ? ' · currently ' + esc(formatMoney(per)) + '/serving' : ''}</p>
       ${(() => { const est = estimateRecipeCost(r); return est ? `<p class="form-hint">Table estimate ~${esc(formatMoney(est.total))} total (${esc(est.matched)} matched) → ${esc(formatMoney(est.perServing))}/serving. Manual total above overrides the estimate on cards.</p>` : `<p class="form-hint">No staples matched yet — edit <button type="button" class="btn-ghost btn-sm" id="costOpenPrices" style="display:inline;padding:0;min-height:auto">staple prices</button> if you want estimates.</p>`; })()}
       <div class="form-actions">
@@ -2409,7 +2448,7 @@ a { color: var(--accent); }
   function openPlanPicker(dayKey) {
     ui.sheetMode = 'planPick';
     ui.editId = dayKey;
-    const sorted = activeRecipes().slice().sort((a, b) => a.name.localeCompare(b.name));
+    const sorted = activeRecipes().slice().sort((a, b) => recipeNameCmp(a, b));
     if (!sorted.length) {
       openSheet(`<h2>Add to day</h2><div class="empty"><strong>No recipes</strong></div>
         <button class="btn btn-secondary btn-block" type="button" id="cancelSheet">Close</button>`);
@@ -2627,6 +2666,9 @@ a { color: var(--accent); }
     if (e.target.id === 'clearFiltersBtn') {
       ui.protein.clear(); ui.cook.clear(); ui.cost.clear();
       ui.cuisine.clear(); ui.occasion.clear(); ui.difficulty.clear();
+      ui.search = '';
+      const si = $('#searchInput');
+      if (si) si.value = '';
       renderRecipes(); return;
     }
     if (e.target.id === 'archiveViewBtn' || e.target.closest('#archiveViewBtn')) {
