@@ -155,14 +155,26 @@ a { color: var(--accent); }
 .sheet-backdrop.open { opacity: 1; pointer-events: auto; }
 .sheet {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 90;
-  max-height: min(92dvh, 920px); overflow: auto;
+  max-height: min(92dvh, 920px); overflow: hidden;
+  display: flex; flex-direction: column;
   background: var(--bg2); border-radius: 20px 20px 0 0;
-  padding: 12px 16px calc(20px + var(--safe-b));
+  padding: 0;
   transform: translateY(110%); transition: transform .28s cubic-bezier(.2,.8,.2,1);
   box-shadow: 0 -8px 40px rgba(0,0,0,.25);
+  will-change: transform;
 }
 .sheet.open { transform: translateY(0); }
-.sheet-handle { width: 36px; height: 4px; border-radius: 2px; background: var(--border); margin: 0 auto 12px; touch-action: none; cursor: grab; }
+.sheet-handle {
+  flex-shrink: 0; width: 36px; height: 5px; border-radius: 3px;
+  background: var(--border); margin: 0 auto;
+  padding: 18px 48px 10px; box-sizing: content-box;
+  background-clip: content-box; touch-action: none; cursor: grab;
+}
+.sheet-scroll {
+  flex: 1 1 auto; min-height: 0; overflow: auto;
+  -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+  padding: 0 16px calc(20px + var(--safe-b));
+}
 .sheet h2 { font-size: 1.15rem; font-weight: 700; margin-bottom: 14px; }
 .form-group { margin-bottom: 12px; }
 .form-group label { display: block; font-size: .78rem; font-weight: 650; color: var(--text2); margin-bottom: 5px; }
@@ -248,19 +260,36 @@ a { color: var(--accent); }
 .badge.archived { background: #98989f33; color: var(--text2); }
 .cook-mode {
   position: fixed; inset: 0; z-index: 100; background: var(--bg);
-  display: flex; flex-direction: column; padding: calc(12px + var(--safe-t)) 20px calc(20px + var(--safe-b));
+  display: flex; flex-direction: column;
+  padding: calc(12px + var(--safe-t)) 16px calc(16px + var(--safe-b));
+  gap: 10px;
 }
-.cook-mode-top { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
-.cook-mode-top h2 { flex: 1; font-size: 1rem; font-weight: 700; }
-.cook-progress { font-size: .85rem; color: var(--text2); font-weight: 700; }
+.cook-mode-top { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.cook-mode-top h2 { flex: 1; font-size: 1rem; font-weight: 700; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cook-progress { font-size: .9rem; color: var(--text2); font-weight: 800; flex-shrink: 0; }
+.cook-step-wrap {
+  flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.cook-step-badge {
+  flex-shrink: 0; align-self: flex-start;
+  font-size: .78rem; font-weight: 800; letter-spacing: .03em; text-transform: uppercase;
+  color: var(--accent); background: var(--accent-soft);
+  padding: 6px 12px; border-radius: 999px; margin-bottom: 10px;
+}
 .cook-step {
-  flex: 1; display: flex; align-items: center; justify-content: center;
-  font-size: clamp(1.35rem, 5.5vw, 1.85rem); font-weight: 650; line-height: 1.45;
-  text-align: center; padding: 20px 8px; overflow: auto;
+  flex: 1 1 auto; min-height: 0; overflow: auto; -webkit-overflow-scrolling: touch;
+  display: block;
+  font-size: clamp(1.5rem, 5.2vw, 1.85rem); font-weight: 650; line-height: 1.6;
+  text-align: left; letter-spacing: -.01em;
+  padding: 18px 16px; max-width: 40rem; width: 100%; margin: 0 auto;
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 18px;
+  box-shadow: 0 4px 18px rgba(0,0,0,.06);
 }
 .cook-step .inj { color: var(--accent); font-weight: 800; }
-.cook-nav { display: flex; gap: 10px; }
+.cook-nav { display: flex; gap: 10px; flex-shrink: 0; }
 .cook-nav .btn { flex: 1; min-height: 56px; font-size: 1.05rem; }
+#cookSubst { flex-shrink: 0; max-height: 22vh; overflow: auto; }
 .toggle-row {
   display: flex; align-items: center; gap: 10px; padding: 12px;
   background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; margin: 10px 0;
@@ -431,9 +460,12 @@ a { color: var(--accent); }
 </nav>
 
 <div class="sheet-backdrop" id="backdrop"></div>
+<!-- rs-build: 20261028-sheet-v2 -->
 <div class="sheet" id="sheet" role="dialog" aria-modal="true">
-  <div class="sheet-handle"></div>
-  <div id="sheetBody"></div>
+  <div class="sheet-handle" id="sheetHandle" aria-hidden="true"></div>
+  <div class="sheet-scroll" id="sheetScroll">
+    <div id="sheetBody"></div>
+  </div>
 </div>
 <div class="cook-mode hidden" id="cookMode" role="dialog" aria-modal="true" aria-label="Cooking mode">
   <div class="cook-mode-top">
@@ -451,8 +483,11 @@ a { color: var(--accent); }
       <button class="btn btn-ghost btn-sm" type="button" id="timerFromStepBtn">From step</button>
     </div>
   </div>
-  <div class="cook-step" id="cookStep" tabindex="0"></div>
-  <div id="cookSubst" style="max-height:28vh;overflow:auto;margin-bottom:8px"></div>
+  <div class="cook-step-wrap">
+    <div class="cook-step-badge" id="cookStepBadge">Step 1 of 1</div>
+    <div class="cook-step" id="cookStep" tabindex="0"></div>
+  </div>
+  <div id="cookSubst"></div>
   <div class="cook-nav">
     <button class="btn btn-secondary" type="button" id="cookPrev">← Prev</button>
     <button class="btn btn-primary" type="button" id="cookNext">Next →</button>
@@ -479,10 +514,10 @@ a { color: var(--accent); }
   ];
   // keyword → protein id (scanned with word-boundary-ish match on normalized names)
   const PROTEIN_LOOKUP = {
-    seafood: ['fish','salmon','tuna','shrimp','prawn','prawns','crab','lobster','scallop','scallops','clam','clams','mussel','mussels','cod','tilapia','seafood','anchovy','anchovies','sardine','sardines'],
-    poultry: ['chicken','turkey','duck','hen','poultry','cornish'],
-    pork: ['bacon','ham','pork','sausage','pancetta','prosciutto','pepperoni','chorizo','pork chop','pork chops','ground pork','canadian bacon'],
-    beef: ['beef','steak','brisket','ground beef','chuck','ribeye','sirloin','roast beef','short rib','short ribs']
+    seafood: ['fish','shellfish','salmon','tuna','shrimp','prawn','prawns','crab','lobster','scallop','scallops','clam','clams','mussel','mussels','cod','tilapia','halibut','trout','bass','catfish','mahi','swordfish','seafood','anchovy','anchovies','sardine','sardines','oyster','oysters','calamari','squid','octopus','crawfish','crayfish','langoustine'],
+    poultry: ['chicken','turkey','duck','hen','poultry','cornish','ground turkey','chicken breast','chicken thigh','chicken thighs','chicken wing','chicken wings','rotisserie chicken'],
+    pork: ['bacon','ham','pork','sausage','italian sausage','kielbasa','salami','pancetta','prosciutto','pepperoni','chorizo','pork chop','pork chops','ground pork','canadian bacon','pork belly','pork loin','pork shoulder','spare rib','spare ribs','hot dog','hot dogs'],
+    beef: ['beef','steak','brisket','ground beef','chuck','ribeye','sirloin','roast beef','short rib','short ribs','lamb','lamb chop','lamb chops','veal','bison','burger','hamburg','meatball','meatballs']
   };
   const PROTEIN_PRIORITY = ['seafood', 'poultry', 'pork', 'beef'];
   const COOK_OPTS = [
@@ -641,7 +676,9 @@ a { color: var(--accent); }
     speechRec: null, listening: false,
     cookMode: { recipeId: null, steps: [], index: 0 },
     timers: [], timerTick: null,
-    priceFilter: ''
+    priceFilter: '',
+    proteinManual: false,
+    lastExtractError: ''
   };
 
   const $ = (sel, root) => (root || document).querySelector(sel);
@@ -1090,10 +1127,13 @@ a { color: var(--accent); }
   function openSheet(html) {
     const sheet = $('#sheet');
     const backdrop = $('#backdrop');
+    const scroll = $('#sheetScroll');
     sheet.style.transition = '';
     sheet.style.transform = '';
     backdrop.style.opacity = '';
+    backdrop.style.transition = '';
     $('#sheetBody').innerHTML = html;
+    if (scroll) scroll.scrollTop = 0;
     backdrop.classList.add('open');
     sheet.classList.add('open');
   }
@@ -1105,11 +1145,13 @@ a { color: var(--accent); }
     sheet.style.transition = '';
     sheet.style.transform = '';
     backdrop.style.opacity = '';
+    backdrop.style.transition = '';
     ui.sheetMode = null;
     ui.editId = null;
     ui.pendingPhoto = null;
     ui.ratingValue = null;
     ui.pendingDifficulty = null;
+    ui.proteinManual = false;
     stopListening();
   }
 
@@ -1831,9 +1873,14 @@ a { color: var(--accent); }
     const raw = steps[i] || '';
     const injected = injectQtyIntoStep(raw, r.ingredients || []);
     $('#cookStep').innerHTML = injected;
+    const badge = 'Step ' + (i + 1) + ' of ' + steps.length;
     $('#cookProgress').textContent = (i + 1) + ' / ' + steps.length;
+    const badgeEl = $('#cookStepBadge');
+    if (badgeEl) badgeEl.textContent = badge;
     $('#cookPrev').disabled = i <= 0;
     $('#cookNext').textContent = i >= steps.length - 1 ? 'Done' : 'Next →';
+    const stepEl = $('#cookStep');
+    if (stepEl) stepEl.scrollTop = 0;
     // substitutions panel for missing ingredients
     const miss = (r.ingredients || []).filter(ing => (r.missingIngredients || []).includes(normName(ing.name || ing.raw)));
     const box = $('#cookSubst');
@@ -2266,6 +2313,7 @@ a { color: var(--accent); }
         <textarea id="fIngredients" placeholder="Enter text here">${esc(ings)}</textarea>
         <div class="form-hint">Extract pulls ingredients &amp; steps from the URL when possible (Safari may block fetch).</div>
         <button class="btn btn-secondary btn-sm" type="button" id="extractBtn" style="margin-top:8px">Extract from URL</button>
+        <div class="form-hint" id="extractErrorHint" style="display:none;color:var(--danger);margin-top:6px"></div>
       </div>
       <div class="form-group"><label for="fSteps">Cooking steps (one per line)</label>
         <textarea id="fSteps" placeholder="Enter text here">${esc(stepsTxt)}</textarea>
@@ -2287,6 +2335,8 @@ a { color: var(--accent); }
   function openAdd() {
     ui.sheetMode = 'form';
     ui.editId = null;
+    ui.proteinManual = false;
+    ui.lastExtractError = '';
     openSheet(recipeFormHtml(null));
   }
   function openEdit(id) {
@@ -2294,6 +2344,8 @@ a { color: var(--accent); }
     if (!r) return;
     ui.sheetMode = 'form';
     ui.editId = id;
+    ui.proteinManual = !!r.protein;
+    ui.lastExtractError = '';
     openSheet(recipeFormHtml(r));
   }
 
@@ -2637,16 +2689,29 @@ a { color: var(--accent); }
     if (!sheet || sheet._dismissBound) return;
     sheet._dismissBound = true;
     const HANDLE_ZONE = 56;
-    const DISMISS_DY = 110;
-    const DISMISS_VEL = 0.55; // px/ms
+    const DISMISS_DY = 90;
+    const DISMISS_VEL = 0.45; // px/ms
     let drag = null;
+
+    function scrollEl() {
+      return $('#sheetScroll') || sheet;
+    }
+
+    function nearHandle(clientY) {
+      const handle = $('#sheetHandle') || sheet.querySelector('.sheet-handle');
+      if (handle) {
+        const hr = handle.getBoundingClientRect();
+        // generous hit: full handle padding box + a bit below
+        return clientY <= hr.bottom + 8;
+      }
+      const rect = sheet.getBoundingClientRect();
+      return clientY - rect.top <= HANDLE_ZONE;
+    }
 
     function canStartDismiss(clientY) {
       if (!sheet.classList.contains('open')) return false;
-      const rect = sheet.getBoundingClientRect();
-      const nearHandle = clientY - rect.top <= HANDLE_ZONE;
-      const atTop = sheet.scrollTop <= 0;
-      return nearHandle || atTop;
+      if (nearHandle(clientY)) return true;
+      return scrollEl().scrollTop <= 0;
     }
 
     sheet.addEventListener('touchstart', (e) => {
@@ -2658,11 +2723,11 @@ a { color: var(--accent); }
         startY: t.clientY,
         startX: t.clientX,
         lastY: t.clientY,
-        lastT: Date.now(),
+        lastT: performance.now(),
         dy: 0,
         vel: 0,
         active: false,
-        fromHandle: (t.clientY - sheet.getBoundingClientRect().top) <= HANDLE_ZONE
+        fromHandle: nearHandle(t.clientY)
       };
     }, { passive: true });
 
@@ -2671,32 +2736,38 @@ a { color: var(--accent); }
       const t = e.touches[0];
       const dy = t.clientY - drag.startY;
       const dx = t.clientX - drag.startX;
-      const now = Date.now();
+      const now = performance.now();
       const dt = Math.max(1, now - drag.lastT);
       drag.vel = (t.clientY - drag.lastY) / dt;
       drag.lastY = t.clientY;
       drag.lastT = now;
 
       if (!drag.active) {
-        if (Math.abs(dy) < 8 && Math.abs(dx) < 8) return;
+        if (Math.abs(dy) < 10 && Math.abs(dx) < 10) return;
         // Only dismiss on downward drag; let upward / horizontal through for scroll
-        if (dy <= 0 || Math.abs(dx) > Math.abs(dy) * 1.2) {
+        if (dy <= 0 || Math.abs(dx) > Math.abs(dy) * 1.15) {
           drag = null;
           return;
         }
-        // If content scrolled and not from handle, don't steal scroll
-        if (!drag.fromHandle && sheet.scrollTop > 0) {
+        // Content not at top and not from handle → don't steal scroll
+        if (!drag.fromHandle && scrollEl().scrollTop > 0) {
           drag = null;
           return;
         }
         drag.active = true;
         sheet.style.transition = 'none';
+        backdrop.style.transition = 'none';
       }
-      if (dy < 0) return;
+      if (dy < 0) {
+        drag.dy = 0;
+        sheet.style.transform = 'translateY(0)';
+        return;
+      }
       if (e.cancelable) e.preventDefault();
       drag.dy = dy;
       sheet.style.transform = 'translateY(' + dy + 'px)';
-      const dim = Math.max(0.15, 1 - dy / 420);
+      // fade backdrop with drag (open state uses rgba backdrop; opacity multiplies)
+      const dim = Math.max(0.08, 1 - dy / 380);
       backdrop.style.opacity = String(dim);
     }, { passive: false });
 
@@ -2705,11 +2776,11 @@ a { color: var(--accent); }
       const { dy, vel, active } = drag;
       drag = null;
       if (!active) return;
-      const shouldClose = dy > DISMISS_DY || (dy > 40 && vel > DISMISS_VEL);
+      const shouldClose = dy > DISMISS_DY || (dy > 36 && vel > DISMISS_VEL);
       sheet.style.transition = 'transform .28s cubic-bezier(.2,.8,.2,1)';
-      backdrop.style.transition = 'opacity .2s';
+      backdrop.style.transition = 'opacity .22s';
       if (shouldClose) {
-        sheet.style.transform = 'translateY(110%)';
+        sheet.style.transform = 'translateY(105%)';
         backdrop.style.opacity = '0';
         let done = false;
         const finish = () => {
@@ -2719,10 +2790,10 @@ a { color: var(--accent); }
           closeSheet();
         };
         sheet.addEventListener('transitionend', finish);
-        setTimeout(finish, 320);
+        setTimeout(finish, 340);
       } else {
         sheet.style.transform = 'translateY(0)';
-        backdrop.style.opacity = '';
+        backdrop.style.opacity = '1';
         setTimeout(() => {
           if (sheet.classList.contains('open')) {
             sheet.style.transition = '';
@@ -3041,7 +3112,10 @@ a { color: var(--accent); }
 
     const proteinPick = e.target.closest('.protein-pick');
     if (proteinPick) {
-      $('#fProtein').value = proteinPick.dataset.protein;
+      const val = proteinPick.dataset.protein || '';
+      $('#fProtein').value = val;
+      // Manual lock when user chooses a chip; Clear unlocks auto-detect again
+      ui.proteinManual = !!val;
       $$('.protein-pick').forEach(b => b.classList.toggle('active', b === proteinPick));
       return;
     }
@@ -3075,11 +3149,18 @@ a { color: var(--accent); }
       const url = ($('#fUrl') || {}).value.trim();
       if (!url) { toast('Paste a URL first'); return; }
       const btn = e.target;
+      const hint = $('#extractErrorHint');
+      if (hint) { hint.style.display = 'none'; hint.textContent = ''; }
+      ui.lastExtractError = '';
       btn.disabled = true; btn.textContent = 'Extracting…';
       fetchViaProxies(url).then(html => {
         const ings = extractIngredientsFromHtml(html);
         const steps = extractInstructionsFromHtml(html);
-        if (!ings.length && !steps.length) throw new Error('no ingredients/steps found in page');
+        if (!ings.length && !steps.length) {
+          const parseErr = new Error('parse: no ingredients or steps found in page HTML (JSON-LD/microdata missing)');
+          parseErr.stage = 'parse';
+          throw parseErr;
+        }
         if (ings.length) {
           const ta = $('#fIngredients');
           if (ta) ta.value = (ta.value ? ta.value.replace(/\s*$/, '\n') : '') + ings.join('\n');
@@ -3089,22 +3170,29 @@ a { color: var(--accent); }
           if (st) st.value = (st.value ? st.value.replace(/\s*$/, '\n') : '') + steps.join('\n');
         }
         const proteinEl = $('#fProtein');
-        if (ings.length && proteinEl && !proteinEl.value) {
+        if (ings.length && proteinEl && !proteinEl.value && !ui.proteinManual) {
           const detected = detectProteinFromIngredients(ings);
           if (detected) applyProteinToForm(detected);
         }
+        ui.lastExtractError = '';
+        if (hint) { hint.style.display = 'none'; hint.textContent = ''; }
         if (ings.length && steps.length) toast('Extracted ' + ings.length + ' ingredients and ' + steps.length + ' steps');
         else if (ings.length) toast('Extracted ' + ings.length + ' ingredients (no steps found)');
         else toast('Extracted ' + steps.length + ' steps (no ingredients found)');
       }).catch(err => {
-        console.warn('Recipe extract failed:', err);
+        console.error('Recipe extract failed:', err && err.message, err && err.stack ? '\n' + err.stack : err);
         const reason = (err && err.message) ? String(err.message) : 'unknown error';
-        const emptyish = reason === 'none' || /no ingredients\/steps found/i.test(reason);
+        ui.lastExtractError = reason;
+        const emptyish = /no ingredients or steps found|no ingredients\/steps found/i.test(reason);
         let msg = emptyish
-          ? 'Nothing found — page may block scrapers'
+          ? ('Extract parse: ' + reason)
           : ('Extract failed: ' + reason);
-        if (msg.length > 90) msg = msg.slice(0, 87) + '…';
+        if (msg.length > 110) msg = msg.slice(0, 107) + '…';
         toast(msg);
+        if (hint) {
+          hint.style.display = 'block';
+          hint.textContent = 'Last error: ' + reason;
+        }
       }).finally(() => { btn.disabled = false; btn.textContent = 'Extract from URL'; });
       return;
     }
@@ -3355,6 +3443,16 @@ a { color: var(--accent); }
       // debounce-ish re-render of prices sheet
       clearTimeout(openPricesSheet._t);
       openPricesSheet._t = setTimeout(() => { if (ui.sheetMode === 'prices') openPricesSheet(); }, 180);
+    }
+    if (e.target.id === 'fIngredients') {
+      clearTimeout(detectProteinFromIngredients._t);
+      detectProteinFromIngredients._t = setTimeout(() => {
+        if (ui.proteinManual) return;
+        const proteinEl = $('#fProtein');
+        if (!proteinEl || proteinEl.value) return;
+        const detected = detectProteinFromIngredients(e.target.value);
+        if (detected) applyProteinToForm(detected);
+      }, 300);
     }
   });
   $('#backdrop').addEventListener('click', closeSheet);
