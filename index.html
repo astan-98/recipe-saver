@@ -162,7 +162,7 @@ a { color: var(--accent); }
   box-shadow: 0 -8px 40px rgba(0,0,0,.25);
 }
 .sheet.open { transform: translateY(0); }
-.sheet-handle { width: 36px; height: 4px; border-radius: 2px; background: var(--border); margin: 0 auto 12px; }
+.sheet-handle { width: 36px; height: 4px; border-radius: 2px; background: var(--border); margin: 0 auto 12px; touch-action: none; cursor: grab; }
 .sheet h2 { font-size: 1.15rem; font-weight: 700; margin-bottom: 14px; }
 .form-group { margin-bottom: 12px; }
 .form-group label { display: block; font-size: .78rem; font-weight: 650; color: var(--text2); margin-bottom: 5px; }
@@ -477,6 +477,14 @@ a { color: var(--accent); }
     { id: 'seafood', label: 'Seafood' },
     { id: 'other', label: 'Other/None' }
   ];
+  // keyword → protein id (scanned with word-boundary-ish match on normalized names)
+  const PROTEIN_LOOKUP = {
+    seafood: ['fish','salmon','tuna','shrimp','prawn','prawns','crab','lobster','scallop','scallops','clam','clams','mussel','mussels','cod','tilapia','seafood','anchovy','anchovies','sardine','sardines'],
+    poultry: ['chicken','turkey','duck','hen','poultry','cornish'],
+    pork: ['bacon','ham','pork','sausage','pancetta','prosciutto','pepperoni','chorizo','pork chop','pork chops','ground pork','canadian bacon'],
+    beef: ['beef','steak','brisket','ground beef','chuck','ribeye','sirloin','roast beef','short rib','short ribs']
+  };
+  const PROTEIN_PRIORITY = ['seafood', 'poultry', 'pork', 'beef'];
   const COOK_OPTS = [
     { id: 'u30', label: 'Under 30 min', test: m => m != null && m < 30 },
     { id: '3060', label: '30–60 min', test: m => m != null && m >= 30 && m <= 60 },
@@ -1026,14 +1034,77 @@ a { color: var(--accent); }
     return f ? f.label : '';
   }
 
+  function detectProteinFromIngredients(ings) {
+    const arr = Array.isArray(ings)
+      ? ings
+      : (typeof ings === 'string' ? parseIngredientsText(ings) : []);
+    const names = arr.map(i => {
+      if (!i) return '';
+      if (typeof i === 'string') return normName(i);
+      return normName(i.name || i.raw || '');
+    }).filter(Boolean);
+    if (!names.length) return '';
+    const hits = {};
+    for (const id of PROTEIN_PRIORITY) {
+      // Longer keywords first so "ground beef" / "pork chop" win over short tokens
+      const keys = (PROTEIN_LOOKUP[id] || []).slice().sort((a, b) => b.length - a.length);
+      let rich = 0;
+      for (const kw of keys) {
+        const nkw = normName(kw);
+        if (!nkw) continue;
+        // Whole-token-ish substring: " beef " in " ground beef ", avoid bare "ham" in "chamomile"
+        const matched = names.some(n => {
+          if (n === nkw) return true;
+          const padded = ' ' + n + ' ';
+          if (padded.includes(' ' + nkw + ' ')) return true;
+          // multi-word keyword as contiguous phrase
+          if (nkw.includes(' ') && n.includes(nkw)) return true;
+          return false;
+        });
+        if (matched) rich++;
+      }
+      if (rich) hits[id] = rich;
+    }
+    if (!Object.keys(hits).length) return '';
+    // Priority seafood > poultry > pork > beef; break ties by hit count
+    let best = '';
+    let bestScore = -1;
+    for (const id of PROTEIN_PRIORITY) {
+      if (!hits[id]) continue;
+      const score = hits[id] * 10 + (4 - PROTEIN_PRIORITY.indexOf(id));
+      if (score > bestScore) { bestScore = score; best = id; }
+    }
+    return best;
+  }
+
+  function applyProteinToForm(proteinId) {
+    if (!proteinId) return;
+    const hidden = $('#fProtein');
+    if (!hidden) return;
+    hidden.value = proteinId;
+    $$('.protein-pick').forEach(b => {
+      b.classList.toggle('active', (b.dataset.protein || '') === proteinId);
+    });
+  }
+
   function openSheet(html) {
+    const sheet = $('#sheet');
+    const backdrop = $('#backdrop');
+    sheet.style.transition = '';
+    sheet.style.transform = '';
+    backdrop.style.opacity = '';
     $('#sheetBody').innerHTML = html;
-    $('#backdrop').classList.add('open');
-    $('#sheet').classList.add('open');
+    backdrop.classList.add('open');
+    sheet.classList.add('open');
   }
   function closeSheet() {
-    $('#backdrop').classList.remove('open');
-    $('#sheet').classList.remove('open');
+    const sheet = $('#sheet');
+    const backdrop = $('#backdrop');
+    backdrop.classList.remove('open');
+    sheet.classList.remove('open');
+    sheet.style.transition = '';
+    sheet.style.transform = '';
+    backdrop.style.opacity = '';
     ui.sheetMode = null;
     ui.editId = null;
     ui.pendingPhoto = null;
@@ -1099,29 +1170,46 @@ a { color: var(--accent); }
     else startDictation(textareaId);
   }
 
+  function classifyFetchError(err, label, status) {
+    if (status === 401 || status === 403) return new Error(label + ': blocked or HTTP ' + status);
+    if (status) return new Error(label + ': blocked or HTTP ' + status);
+    const name = (err && err.name) || '';
+    const msg = String((err && err.message) || err || '');
+    if (name === 'AbortError' || /aborted|abort/i.test(msg)) return new Error(label + ': timeout (12s)');
+    if (name === 'TypeError' || /failed to fetch|networkerror|load failed|cors/i.test(msg)) {
+      return new Error(label + ': network or CORS blocked');
+    }
+    if (/empty/i.test(msg)) return new Error(label + ': empty response');
+    return new Error(label + ': ' + (msg || 'fetch failed'));
+  }
+
   async function fetchViaProxies(url) {
     const encoded = encodeURIComponent(url);
-    const proxies = [
-      'https://api.allorigins.win/raw?url=' + encoded,
-      'https://corsproxy.io/?' + encoded
+    const attempts = [
+      { label: 'proxy allorigins', url: 'https://api.allorigins.win/raw?url=' + encoded },
+      { label: 'proxy corsproxy', url: 'https://corsproxy.io/?' + encoded },
+      { label: 'direct', url: url, direct: true }
     ];
     let lastErr = null;
-    for (const p of proxies) {
+    for (const attempt of attempts) {
       try {
         const ctrl = new AbortController();
         const t = setTimeout(() => ctrl.abort(), 12000);
-        const res = await fetch(p, { signal: ctrl.signal });
+        const opts = attempt.direct
+          ? { mode: 'cors', signal: ctrl.signal }
+          : { signal: ctrl.signal };
+        const res = await fetch(attempt.url, opts);
         clearTimeout(t);
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        const text = await res.text();
-        if (text && text.length > 40) return text;
-      } catch (e) { lastErr = e; }
+        if (!res.ok) throw classifyFetchError(null, attempt.label, res.status);
+        const body = await res.text();
+        if (!body || body.length <= 40) throw new Error(attempt.label + ': empty response');
+        return body;
+      } catch (e) {
+        if (e && /^(proxy |direct)/.test(String(e.message || ''))) lastErr = e;
+        else lastErr = classifyFetchError(e, attempt.label);
+      }
     }
-    try {
-      const res = await fetch(url, { mode: 'cors' });
-      if (res.ok) return await res.text();
-    } catch (e) { lastErr = e; }
-    throw lastErr || new Error('Fetch failed');
+    throw lastErr || new Error('all fetch attempts failed');
   }
 
   function extractIngredientsFromHtml(html) {
@@ -2238,6 +2326,13 @@ a { color: var(--accent); }
   function saveFromForm() {
     const data = readFormRecipe();
     if (!data) return;
+    if (!data.protein) {
+      const detected = detectProteinFromIngredients(data.ingredients);
+      if (detected) {
+        data.protein = detected;
+        applyProteinToForm(detected);
+      }
+    }
     const now = new Date().toISOString();
     if (ui.editId) {
       const i = state.recipes.findIndex(x => x.id === ui.editId);
@@ -2534,6 +2629,113 @@ a { color: var(--accent); }
       }
       item.classList.remove('open-left', 'open-right');
     });
+  }
+
+  function bindSheetDismiss() {
+    const sheet = $('#sheet');
+    const backdrop = $('#backdrop');
+    if (!sheet || sheet._dismissBound) return;
+    sheet._dismissBound = true;
+    const HANDLE_ZONE = 56;
+    const DISMISS_DY = 110;
+    const DISMISS_VEL = 0.55; // px/ms
+    let drag = null;
+
+    function canStartDismiss(clientY) {
+      if (!sheet.classList.contains('open')) return false;
+      const rect = sheet.getBoundingClientRect();
+      const nearHandle = clientY - rect.top <= HANDLE_ZONE;
+      const atTop = sheet.scrollTop <= 0;
+      return nearHandle || atTop;
+    }
+
+    sheet.addEventListener('touchstart', (e) => {
+      if (!sheet.classList.contains('open')) return;
+      if (e.touches.length !== 1) return;
+      const t = e.touches[0];
+      if (!canStartDismiss(t.clientY)) { drag = null; return; }
+      drag = {
+        startY: t.clientY,
+        startX: t.clientX,
+        lastY: t.clientY,
+        lastT: Date.now(),
+        dy: 0,
+        vel: 0,
+        active: false,
+        fromHandle: (t.clientY - sheet.getBoundingClientRect().top) <= HANDLE_ZONE
+      };
+    }, { passive: true });
+
+    sheet.addEventListener('touchmove', (e) => {
+      if (!drag || e.touches.length !== 1) return;
+      const t = e.touches[0];
+      const dy = t.clientY - drag.startY;
+      const dx = t.clientX - drag.startX;
+      const now = Date.now();
+      const dt = Math.max(1, now - drag.lastT);
+      drag.vel = (t.clientY - drag.lastY) / dt;
+      drag.lastY = t.clientY;
+      drag.lastT = now;
+
+      if (!drag.active) {
+        if (Math.abs(dy) < 8 && Math.abs(dx) < 8) return;
+        // Only dismiss on downward drag; let upward / horizontal through for scroll
+        if (dy <= 0 || Math.abs(dx) > Math.abs(dy) * 1.2) {
+          drag = null;
+          return;
+        }
+        // If content scrolled and not from handle, don't steal scroll
+        if (!drag.fromHandle && sheet.scrollTop > 0) {
+          drag = null;
+          return;
+        }
+        drag.active = true;
+        sheet.style.transition = 'none';
+      }
+      if (dy < 0) return;
+      if (e.cancelable) e.preventDefault();
+      drag.dy = dy;
+      sheet.style.transform = 'translateY(' + dy + 'px)';
+      const dim = Math.max(0.15, 1 - dy / 420);
+      backdrop.style.opacity = String(dim);
+    }, { passive: false });
+
+    function endDrag() {
+      if (!drag) return;
+      const { dy, vel, active } = drag;
+      drag = null;
+      if (!active) return;
+      const shouldClose = dy > DISMISS_DY || (dy > 40 && vel > DISMISS_VEL);
+      sheet.style.transition = 'transform .28s cubic-bezier(.2,.8,.2,1)';
+      backdrop.style.transition = 'opacity .2s';
+      if (shouldClose) {
+        sheet.style.transform = 'translateY(110%)';
+        backdrop.style.opacity = '0';
+        let done = false;
+        const finish = () => {
+          if (done) return;
+          done = true;
+          sheet.removeEventListener('transitionend', finish);
+          closeSheet();
+        };
+        sheet.addEventListener('transitionend', finish);
+        setTimeout(finish, 320);
+      } else {
+        sheet.style.transform = 'translateY(0)';
+        backdrop.style.opacity = '';
+        setTimeout(() => {
+          if (sheet.classList.contains('open')) {
+            sheet.style.transition = '';
+            sheet.style.transform = '';
+            backdrop.style.opacity = '';
+            backdrop.style.transition = '';
+          }
+        }, 300);
+      }
+    }
+
+    sheet.addEventListener('touchend', endDrag, { passive: true });
+    sheet.addEventListener('touchcancel', endDrag, { passive: true });
   }
 
   function bindSwipeDelete() {
@@ -2877,7 +3079,7 @@ a { color: var(--accent); }
       fetchViaProxies(url).then(html => {
         const ings = extractIngredientsFromHtml(html);
         const steps = extractInstructionsFromHtml(html);
-        if (!ings.length && !steps.length) throw new Error('none');
+        if (!ings.length && !steps.length) throw new Error('no ingredients/steps found in page');
         if (ings.length) {
           const ta = $('#fIngredients');
           if (ta) ta.value = (ta.value ? ta.value.replace(/\s*$/, '\n') : '') + ings.join('\n');
@@ -2886,11 +3088,23 @@ a { color: var(--accent); }
           const st = $('#fSteps');
           if (st) st.value = (st.value ? st.value.replace(/\s*$/, '\n') : '') + steps.join('\n');
         }
+        const proteinEl = $('#fProtein');
+        if (ings.length && proteinEl && !proteinEl.value) {
+          const detected = detectProteinFromIngredients(ings);
+          if (detected) applyProteinToForm(detected);
+        }
         if (ings.length && steps.length) toast('Extracted ' + ings.length + ' ingredients and ' + steps.length + ' steps');
         else if (ings.length) toast('Extracted ' + ings.length + ' ingredients (no steps found)');
         else toast('Extracted ' + steps.length + ' steps (no ingredients found)');
-      }).catch(() => {
-        toast('Could not extract — paste ingredients and steps manually');
+      }).catch(err => {
+        console.warn('Recipe extract failed:', err);
+        const reason = (err && err.message) ? String(err.message) : 'unknown error';
+        const emptyish = reason === 'none' || /no ingredients\/steps found/i.test(reason);
+        let msg = emptyish
+          ? 'Nothing found — page may block scrapers'
+          : ('Extract failed: ' + reason);
+        if (msg.length > 90) msg = msg.slice(0, 87) + '…';
+        toast(msg);
       }).finally(() => { btn.disabled = false; btn.textContent = 'Extract from URL'; });
       return;
     }
@@ -3146,6 +3360,7 @@ a { color: var(--accent); }
   $('#backdrop').addEventListener('click', closeSheet);
   bindLongPress();
   bindSwipeDelete();
+  bindSheetDismiss();
   renderAll();
   updateBackupBanner();
 })();
