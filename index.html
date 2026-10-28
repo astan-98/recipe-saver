@@ -1,0 +1,2982 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Recipe Saver">
+<meta name="theme-color" content="#1a1a1a">
+<meta name="description" content="Personal offline recipe link saver">
+<title>Recipe Saver</title>
+<style>
+:root {
+  --bg: #f5f5f7; --bg2: #ffffff; --bg3: #ebebef; --text: #1c1c1e; --text2: #6c6c70;
+  --accent: #0a84ff; --accent-soft: rgba(10,132,255,.15); --danger: #ff453a; --ok: #30d158;
+  --border: rgba(0,0,0,.1); --shadow: 0 2px 12px rgba(0,0,0,.08); --radius: 14px;
+  --nav-h: 64px; --safe-b: env(safe-area-inset-bottom, 0px); --safe-t: env(safe-area-inset-top, 0px);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #000000; --bg2: #1c1c1e; --bg3: #2c2c2e; --text: #f5f5f7; --text2: #98989f;
+    --accent: #0a84ff; --accent-soft: rgba(10,132,255,.22); --danger: #ff453a; --ok: #30d158;
+    --border: rgba(255,255,255,.12); --shadow: 0 2px 16px rgba(0,0,0,.45);
+  }
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--bg); color: var(--text); min-height: 100dvh;
+  padding-top: var(--safe-t); padding-bottom: calc(var(--nav-h) + var(--safe-b) + 8px);
+  line-height: 1.4; -webkit-tap-highlight-color: transparent;
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; border: none; background: none; }
+a { color: var(--accent); }
+.app-header {
+  position: sticky; top: 0; z-index: 40;
+  background: color-mix(in srgb, var(--bg) 86%, transparent);
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  padding: 12px 16px 8px; border-bottom: 1px solid var(--border);
+}
+.app-header h1 { font-size: 1.35rem; font-weight: 700; letter-spacing: -0.02em; }
+.app-header .sub { font-size: .78rem; color: var(--text2); margin-top: 2px; }
+.header-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: 44px; padding: 10px 16px; border-radius: 12px;
+  font-weight: 600; font-size: .92rem; transition: opacity .15s, transform .1s;
+}
+.btn:active { transform: scale(.97); opacity: .85; }
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-secondary { background: var(--bg3); color: var(--text); }
+.btn-ghost { background: transparent; color: var(--accent); padding: 8px 10px; }
+.btn-danger { background: var(--danger); color: #fff; }
+.btn-sm { min-height: 36px; padding: 6px 12px; font-size: .85rem; border-radius: 10px; }
+.btn-icon {
+  width: 44px; height: 44px; border-radius: 12px; background: var(--bg3);
+  display: inline-flex; align-items: center; justify-content: center; font-size: 1.1rem;
+}
+.btn-block { width: 100%; }
+.tabs-panel { display: none; padding: 12px 16px 24px; }
+.tabs-panel.active { display: block; }
+.search-row { display: flex; gap: 8px; margin-bottom: 10px; }
+.search-row input {
+  flex: 1; min-height: 46px; padding: 10px 14px; border-radius: 12px;
+  border: 1px solid var(--border); background: var(--bg2); outline: none;
+}
+.search-row input:focus { border-color: var(--accent); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.chip {
+  min-height: 36px; padding: 6px 12px; border-radius: 999px;
+  background: var(--bg3); color: var(--text2); font-size: .8rem; font-weight: 600;
+  border: 1.5px solid transparent;
+}
+.chip.active { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.chip-label { width: 100%; font-size: .72rem; color: var(--text2); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; margin: 4px 0 2px; }
+.sort-row { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
+.sort-row select {
+  flex: 1; min-height: 42px; padding: 8px 12px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--bg2);
+}
+.cards { display: flex; flex-direction: column; gap: 10px; }
+.swipe-item {
+  position: relative; overflow: hidden; border-radius: var(--radius);
+  box-shadow: var(--shadow); border: 1px solid var(--border); background: var(--danger);
+}
+.swipe-actions {
+  position: absolute; inset: 0; display: flex; justify-content: space-between; align-items: stretch;
+  z-index: 0;
+}
+.swipe-del {
+  width: 92px; min-height: 100%; background: var(--danger); color: #fff;
+  font-weight: 800; font-size: .95rem; letter-spacing: .02em;
+  display: flex; align-items: center; justify-content: center;
+  pointer-events: auto;
+}
+.swipe-front {
+  position: relative; z-index: 1; background: var(--bg2);
+  will-change: transform; transition: transform .2s ease;
+  touch-action: pan-y;
+}
+.swipe-front.dragging { transition: none; }
+.card {
+  background: var(--bg2); border-radius: 0; padding: 14px;
+  border: none; box-shadow: none;
+  display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: start;
+  user-select: none; -webkit-user-select: none;
+}
+.card-thumb { width: 48px; height: 48px; border-radius: 10px; object-fit: cover; background: var(--bg3); flex-shrink: 0; }
+.card-thumb.placeholder { display: flex; align-items: center; justify-content: center; font-size: 1.2rem; color: var(--text2); }
+.card-body { min-width: 0; }
+.card-title { font-weight: 700; font-size: 1.02rem; margin-bottom: 4px; word-break: break-word; }
+.card-meta { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 4px; }
+.badge {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: .7rem; font-weight: 700; padding: 3px 8px; border-radius: 999px;
+  background: var(--bg3); color: var(--text2);
+}
+.badge.tiktok { background: #111; color: #fff; }
+.badge.instagram { background: linear-gradient(45deg,#f09433,#e6683c,#dc2743,#cc2366,#bc1888); color:#fff; }
+.badge.youtube { background: #ff0000; color: #fff; }
+.badge.web { background: var(--accent-soft); color: var(--accent); }
+.badge.rating { background: #ffd60a33; color: #c9a000; }
+@media (prefers-color-scheme: dark) { .badge.rating { color: #ffd60a; } }
+.badge.cost { background: #30d15822; color: var(--ok); }
+.card-url { font-size: .75rem; color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-mods { font-size: .78rem; color: var(--text2); margin-top: 4px; font-style: italic;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.card-actions { display: flex; flex-direction: column; gap: 4px; }
+.empty { text-align: center; padding: 48px 20px; color: var(--text2); }
+.empty strong { display: block; color: var(--text); margin-bottom: 6px; font-size: 1.05rem; }
+.bottom-nav {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+  height: calc(var(--nav-h) + var(--safe-b)); padding-bottom: var(--safe-b);
+  background: color-mix(in srgb, var(--bg2) 92%, transparent);
+  backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+  border-top: 1px solid var(--border); display: grid; grid-template-columns: repeat(4, 1fr);
+}
+.nav-btn {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 2px; color: var(--text2); font-size: .68rem; font-weight: 600; min-height: var(--nav-h);
+}
+.nav-btn .ico { font-size: 1.25rem; line-height: 1; }
+.nav-btn.active { color: var(--accent); }
+.sheet-backdrop {
+  position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 80;
+  opacity: 0; pointer-events: none; transition: opacity .2s;
+}
+.sheet-backdrop.open { opacity: 1; pointer-events: auto; }
+.sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 90;
+  max-height: min(92dvh, 920px); overflow: auto;
+  background: var(--bg2); border-radius: 20px 20px 0 0;
+  padding: 12px 16px calc(20px + var(--safe-b));
+  transform: translateY(110%); transition: transform .28s cubic-bezier(.2,.8,.2,1);
+  box-shadow: 0 -8px 40px rgba(0,0,0,.25);
+}
+.sheet.open { transform: translateY(0); }
+.sheet-handle { width: 36px; height: 4px; border-radius: 2px; background: var(--border); margin: 0 auto 12px; }
+.sheet h2 { font-size: 1.15rem; font-weight: 700; margin-bottom: 14px; }
+.form-group { margin-bottom: 12px; }
+.form-group label { display: block; font-size: .78rem; font-weight: 650; color: var(--text2); margin-bottom: 5px; }
+.form-group input, .form-group textarea, .form-group select {
+  width: 100%; min-height: 46px; padding: 10px 12px; border-radius: 12px;
+  border: 1px solid var(--border); background: var(--bg); outline: none;
+}
+.form-group textarea { min-height: 110px; resize: vertical; line-height: 1.45; }
+.form-group input:focus, .form-group textarea:focus, .form-group select:focus { border-color: var(--accent); }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.form-hint { font-size: .72rem; color: var(--text2); margin-top: 4px; }
+.form-actions { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+.form-actions .btn { flex: 1; min-width: 120px; }
+.action-list { display: flex; flex-direction: column; gap: 4px; }
+.action-item {
+  min-height: 52px; padding: 12px 14px; border-radius: 12px; text-align: left;
+  font-weight: 600; background: var(--bg); display: flex; align-items: center; gap: 10px;
+}
+.action-item:active { background: var(--bg3); }
+.action-item.danger { color: var(--danger); }
+.toast {
+  position: fixed; left: 50%; bottom: calc(var(--nav-h) + var(--safe-b) + 16px);
+  transform: translateX(-50%) translateY(20px); z-index: 120;
+  background: #2c2c2e; color: #fff; padding: 12px 18px; border-radius: 12px;
+  font-size: .88rem; font-weight: 600; max-width: 90vw; text-align: center;
+  opacity: 0; pointer-events: none; transition: .25s; box-shadow: var(--shadow);
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.week-nav { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.week-nav h2 { flex: 1; text-align: center; font-size: 1rem; }
+.day-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; margin-bottom: 10px; }
+.day-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.day-head strong { font-size: .95rem; }
+.day-head .date { font-size: .75rem; color: var(--text2); }
+.day-recipe {
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+  background: var(--bg); border-radius: 10px; margin-bottom: 6px; font-size: .9rem; font-weight: 600;
+}
+.day-recipe .rm { width: 36px; height: 36px; border-radius: 10px; background: var(--bg3); color: var(--danger); font-weight: 700; }
+.day-empty { font-size: .8rem; color: var(--text2); padding: 4px 0; }
+.pantry-item, .select-card {
+  display: flex; align-items: center; gap: 10px; padding: 12px;
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 8px;
+}
+.select-card input[type=checkbox] { width: 22px; height: 22px; accent-color: var(--accent); flex-shrink: 0; }
+.select-card label { flex: 1; font-weight: 600; }
+.merged-list { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; margin-top: 12px; }
+.merged-list li { padding: 6px 0; border-bottom: 1px solid var(--border); list-style: none; }
+.merged-list li:last-child { border-bottom: none; }
+.pantry-qty { display: flex; align-items: center; gap: 4px; }
+.pantry-qty button { width: 36px; height: 36px; border-radius: 10px; background: var(--bg3); font-weight: 700; font-size: 1.1rem; }
+.pantry-qty span { min-width: 36px; text-align: center; font-weight: 700; }
+.pantry-item.low { border-color: var(--danger); }
+.pantry-name { flex: 1; font-weight: 650; word-break: break-word; }
+.match-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; margin-bottom: 10px; }
+.match-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+.match-pct { font-weight: 800; color: var(--ok); font-size: 1.1rem; }
+.match-missing { font-size: .8rem; color: var(--text2); }
+.match-missing .miss { color: var(--danger); font-weight: 600; }
+.detail-photo { width: 100%; max-height: 280px; object-fit: cover; border-radius: 14px; margin-bottom: 12px; background: var(--bg3); }
+.scale-row { display: flex; align-items: center; gap: 10px; margin: 12px 0; }
+.scale-row button { width: 48px; height: 48px; border-radius: 14px; background: var(--bg3); font-size: 1.4rem; font-weight: 700; }
+.scale-row .val { font-size: 1.2rem; font-weight: 800; min-width: 48px; text-align: center; }
+.ing-list { list-style: none; }
+.ing-list li { padding: 8px 0; border-bottom: 1px solid var(--border); font-size: .95rem; }
+.ing-list .qty { font-weight: 700; color: var(--accent); margin-right: 6px; }
+.rating-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin: 8px 0; }
+.rating-grid button { min-height: 48px; border-radius: 12px; background: var(--bg3); font-weight: 800; font-size: 1rem; }
+.rating-grid button.active { background: var(--accent); color: #fff; }
+.protein-chips, .cost-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.mic-row { display: flex; gap: 8px; align-items: flex-start; }
+.mic-row textarea { flex: 1; }
+.mic-btn.listening { background: var(--danger); color: #fff; animation: pulse 1s infinite; }
+@keyframes pulse { 50% { opacity: .7; } }
+.section-title { font-size: 1.05rem; font-weight: 700; margin: 16px 0 10px; }
+.photo-warn { font-size: .75rem; color: var(--text2); background: var(--bg3); padding: 8px 10px; border-radius: 10px; margin-top: 6px; }
+.hidden { display: none !important; }
+
+.badge.difficulty-easy { background: #30d15822; color: var(--ok); }
+.badge.difficulty-medium { background: #ffd60a33; color: #c9a000; }
+.badge.difficulty-hard { background: #ff453a22; color: var(--danger); }
+.badge.cuisine, .badge.occasion { background: var(--accent-soft); color: var(--accent); }
+.badge.archived { background: #98989f33; color: var(--text2); }
+.cook-mode {
+  position: fixed; inset: 0; z-index: 100; background: var(--bg);
+  display: flex; flex-direction: column; padding: calc(12px + var(--safe-t)) 20px calc(20px + var(--safe-b));
+}
+.cook-mode-top { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+.cook-mode-top h2 { flex: 1; font-size: 1rem; font-weight: 700; }
+.cook-progress { font-size: .85rem; color: var(--text2); font-weight: 700; }
+.cook-step {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  font-size: clamp(1.35rem, 5.5vw, 1.85rem); font-weight: 650; line-height: 1.45;
+  text-align: center; padding: 20px 8px; overflow: auto;
+}
+.cook-step .inj { color: var(--accent); font-weight: 800; }
+.cook-nav { display: flex; gap: 10px; }
+.cook-nav .btn { flex: 1; min-height: 56px; font-size: 1.05rem; }
+.toggle-row {
+  display: flex; align-items: center; gap: 10px; padding: 12px;
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; margin: 10px 0;
+  font-weight: 600; font-size: .92rem;
+}
+.toggle-row input { width: 22px; height: 22px; accent-color: var(--accent); }
+.archive-banner {
+  background: var(--bg3); border-radius: 12px; padding: 10px 12px; margin-bottom: 10px;
+  display: flex; align-items: center; gap: 8px; font-size: .88rem; font-weight: 600;
+}
+.merged-list .excluded { opacity: .55; text-decoration: line-through; }
+
+
+.timer-bar {
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 14px;
+  padding: 10px 12px; margin-bottom: 12px; flex-shrink: 0;
+}
+.timer-bar-title { font-size: .72rem; font-weight: 700; color: var(--text2); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 6px; }
+.timer-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
+.timer-row:last-child { margin-bottom: 0; }
+.timer-chip {
+  display: flex; align-items: center; gap: 8px; background: var(--bg3);
+  border-radius: 12px; padding: 8px 10px; min-height: 44px; flex: 1; min-width: 140px;
+}
+.timer-chip.done { background: #ff453a33; animation: pulse 1s infinite; }
+.timer-chip .tlabel { font-size: .78rem; font-weight: 650; color: var(--text2); flex: 1; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.timer-chip .tval { font-variant-numeric: tabular-nums; font-weight: 800; font-size: 1.15rem; min-width: 64px; text-align: right; }
+.timer-chip button { width: 36px; height: 36px; border-radius: 10px; background: var(--bg2); font-weight: 700; }
+.timer-add { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; align-items: center; }
+.timer-add input { min-height: 40px; width: 72px; padding: 6px 10px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); }
+.subst-card {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 12px;
+  padding: 10px 12px; margin-bottom: 8px; font-size: .9rem;
+}
+.subst-card .miss-label { font-weight: 700; margin-bottom: 4px; }
+.subst-card .sug { color: var(--accent); font-weight: 650; }
+.subst-card .custom-row { display: flex; gap: 6px; margin-top: 8px; }
+.subst-card .custom-row input { flex: 1; min-height: 40px; padding: 6px 10px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg2); }
+.backup-banner {
+  background: var(--accent-soft); border: 1.5px solid var(--accent); border-radius: 12px;
+  padding: 12px; margin-bottom: 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+}
+.backup-banner p { flex: 1; min-width: 160px; font-size: .88rem; font-weight: 600; }
+.ing-list li.missing-ing { opacity: .7; }
+.ing-list .sub-btn { margin-left: 8px; font-size: .75rem; color: var(--accent); font-weight: 700; min-height: 32px; padding: 4px 8px; border-radius: 8px; background: var(--accent-soft); }
+
+
+.price-row {
+  display: flex; align-items: center; gap: 8px; padding: 10px 0;
+  border-bottom: 1px solid var(--border); flex-wrap: wrap;
+}
+.price-row .pname { flex: 1; min-width: 120px; font-weight: 650; font-size: .9rem; }
+.price-row .punit { font-size: .72rem; color: var(--text2); width: 100%; margin-top: -4px; }
+.price-row input {
+  width: 88px; min-height: 40px; padding: 6px 8px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--bg); text-align: right;
+}
+.price-row .pavg { font-size: .72rem; color: var(--text2); min-width: 64px; }
+.tonight-btn {
+  width: 100%; min-height: 52px; margin-bottom: 12px; font-size: 1.02rem;
+  background: linear-gradient(135deg, #30d158, #0a84ff); color: #fff;
+  border-radius: 14px; font-weight: 800; letter-spacing: -0.01em;
+}
+.tonight-list .action-item { font-size: .95rem; }
+
+</style>
+</head>
+<body>
+
+<header class="app-header">
+  <h1>Recipe Saver</h1>
+  <div class="sub">Offline · no accounts · yours forever</div>
+  <div class="header-actions" id="headerActions"></div>
+</header>
+
+<main>
+  <section class="tabs-panel active" id="tab-recipes" data-tab="recipes">
+    <button type="button" class="tonight-btn" id="tonightBtn">🍽 What can I make tonight?</button>
+    <div class="search-row">
+      <input type="search" id="searchInput" placeholder="Search recipes…" autocomplete="off" enterkeyhint="search">
+    </div>
+    <div id="backupBanner" class="backup-banner hidden">
+      <p>💾 It's been a while — export a JSON backup so your recipes stay safe.</p>
+      <button class="btn btn-primary btn-sm" type="button" id="backupNowBtn">Export now</button>
+      <button class="btn btn-ghost btn-sm" type="button" id="backupDismissBtn">Dismiss</button>
+    </div>
+    <div id="archiveBanner" class="archive-banner hidden">
+      <span style="flex:1">📦 Viewing archived recipes</span>
+      <button class="btn btn-secondary btn-sm" type="button" id="exitArchiveBtn">Back</button>
+    </div>
+    <div class="chip-label">Protein</div>
+    <div class="chips" id="filterProtein"></div>
+    <div class="chip-label">Cuisine</div>
+    <div class="chips" id="filterCuisine"></div>
+    <div class="chip-label">Occasion</div>
+    <div class="chips" id="filterOccasion"></div>
+    <div class="chip-label">Difficulty</div>
+    <div class="chips" id="filterDifficulty"></div>
+    <div class="chip-label">Cook time</div>
+    <div class="chips" id="filterCook"></div>
+    <div class="chip-label">Cost</div>
+    <div class="chips" id="filterCost"></div>
+    <div class="sort-row">
+      <select id="sortSelect" aria-label="Sort">
+        <option value="date">Date added</option>
+        <option value="rated">Rating</option>
+        <option value="cook">Cook time</option>
+        <option value="az">Alphabetical (A–Z)</option>
+        <option value="difficulty">Difficulty (easiest first)</option>
+        <option value="pantry">Pantry match</option>
+      </select>
+      <button class="btn btn-secondary btn-sm" type="button" id="clearFiltersBtn">Clear filters</button>
+    </div>
+    <div class="cards" id="recipeCards"></div>
+  </section>
+
+  <section class="tabs-panel" id="tab-plan" data-tab="plan">
+    <div class="week-nav">
+      <button class="btn-icon" type="button" id="weekPrev" aria-label="Previous week">‹</button>
+      <h2 id="weekLabel">This week</h2>
+      <button class="btn-icon" type="button" id="weekNext" aria-label="Next week">›</button>
+    </div>
+    <div id="weekDays"></div>
+  </section>
+
+  <section class="tabs-panel" id="tab-shopping" data-tab="shopping">
+    <div class="header-actions" style="margin:0 0 12px">
+      <button class="btn btn-secondary btn-sm" type="button" id="shopSelectWeek">Use this week's meals</button>
+      <button class="btn btn-secondary btn-sm" type="button" id="shopSelectAll">Select all</button>
+      <button class="btn btn-ghost btn-sm" type="button" id="shopClear">Clear</button>
+    </div>
+    <div id="shopSelectList"></div>
+    <label class="toggle-row" for="excludePantryToggle">
+      <input type="checkbox" id="excludePantryToggle" checked>
+      <span>Auto-exclude pantry items (qty &gt; 0)</span>
+    </label>
+    <button class="btn btn-primary btn-block" type="button" id="buildShoppingBtn" style="margin-top:8px">Build Shopping List</button>
+    <div id="shoppingResult" class="hidden"></div>
+  </section>
+
+  <section class="tabs-panel" id="tab-pantry" data-tab="pantry">
+    <button type="button" class="tonight-btn" id="tonightBtnPantry">🍽 What can I make tonight?</button>
+    <div class="form-row" style="margin-bottom:12px">
+      <div class="form-group" style="margin:0">
+        <label for="pantryNameIn">Item</label>
+        <input id="pantryNameIn" placeholder="e.g. brisket">
+      </div>
+      <div class="form-group" style="margin:0">
+        <label for="pantryQtyIn">Portions</label>
+        <input id="pantryQtyIn" type="number" inputmode="decimal" min="0" step="1" value="1">
+      </div>
+    </div>
+    <button class="btn btn-primary btn-block" type="button" id="pantryAddBtn">Add to pantry</button>
+    <div class="section-title">Inventory</div>
+    <div id="pantryList"></div>
+    <div class="section-title">What Do I Have?</div>
+    <p class="form-hint" style="margin-bottom:10px">Recipes ranked by overlap with your pantry.</p>
+    <div id="pantryMatches"></div>
+  </section>
+</main>
+
+<nav class="bottom-nav" aria-label="Main">
+  <button class="nav-btn active" type="button" data-nav="recipes"><span class="ico">📖</span>Recipes</button>
+  <button class="nav-btn" type="button" data-nav="plan"><span class="ico">📅</span>Plan</button>
+  <button class="nav-btn" type="button" data-nav="shopping"><span class="ico">🛒</span>Shopping</button>
+  <button class="nav-btn" type="button" data-nav="pantry"><span class="ico">🧊</span>Pantry</button>
+</nav>
+
+<div class="sheet-backdrop" id="backdrop"></div>
+<div class="sheet" id="sheet" role="dialog" aria-modal="true">
+  <div class="sheet-handle"></div>
+  <div id="sheetBody"></div>
+</div>
+<div class="cook-mode hidden" id="cookMode" role="dialog" aria-modal="true" aria-label="Cooking mode">
+  <div class="cook-mode-top">
+    <button class="btn btn-secondary btn-sm" type="button" id="cookExit">Exit</button>
+    <h2 id="cookTitle">Cooking</h2>
+    <div class="cook-progress" id="cookProgress">1 / 1</div>
+  </div>
+  <div class="timer-bar" id="timerBar">
+    <div class="timer-bar-title">Timers</div>
+    <div id="timerList"></div>
+    <div class="timer-add">
+      <input id="timerMins" type="number" inputmode="numeric" min="1" value="5" aria-label="Minutes">
+      <span style="font-size:.85rem;color:var(--text2)">min</span>
+      <button class="btn btn-secondary btn-sm" type="button" id="timerAddBtn">+ Timer</button>
+      <button class="btn btn-ghost btn-sm" type="button" id="timerFromStepBtn">From step</button>
+    </div>
+  </div>
+  <div class="cook-step" id="cookStep" tabindex="0"></div>
+  <div id="cookSubst" style="max-height:28vh;overflow:auto;margin-bottom:8px"></div>
+  <div class="cook-nav">
+    <button class="btn btn-secondary" type="button" id="cookPrev">← Prev</button>
+    <button class="btn btn-primary" type="button" id="cookNext">Next →</button>
+  </div>
+</div>
+<div class="toast" id="toast" role="status"></div>
+<input type="file" id="importFile" accept="application/json,.json" class="hidden">
+<input type="file" id="photoFile" accept="image/*" capture="environment" class="hidden">
+
+<script>
+(function () {
+  'use strict';
+
+  const STORAGE_KEY = 'recipe-saver-v2';
+  const LEGACY_KEY = 'recipe-saver-v1';
+  const UNITS = ['cups','cup','tablespoons','tablespoon','tbsp','teaspoons','teaspoon','tsp','pounds','pound','lbs','lb','ounces','ounce','oz','grams','gram','g','kilograms','kg','milliliters','ml','liters','liter','l','cloves','clove','slices','slice','cans','can','packages','package','pkg','pinch','pinches','dash','dashes','bunch','bunches','head','heads','stalks','stalk','pieces','piece','whole','large','medium','small'];
+
+  const PROTEIN_OPTS = [
+    { id: 'beef', label: 'Beef' },
+    { id: 'pork', label: 'Pork' },
+    { id: 'poultry', label: 'Poultry' },
+    { id: 'seafood', label: 'Seafood' },
+    { id: 'other', label: 'Other/None' }
+  ];
+  const COOK_OPTS = [
+    { id: 'u30', label: 'Under 30 min', test: m => m != null && m < 30 },
+    { id: '3060', label: '30–60 min', test: m => m != null && m >= 30 && m <= 60 },
+    { id: '1to2', label: '1–2 hours', test: m => m != null && m > 60 && m <= 120 },
+    { id: '2plus', label: '2+ hours', test: m => m != null && m > 120 }
+  ];
+  const COST_OPTS = [
+    { id: '1', label: '$' },
+    { id: '2', label: '$$' },
+    { id: '3', label: '$$$' },
+    { id: '4', label: '$$$$' }
+  ];
+  const CUISINE_OPTS = [
+    { id: 'italian', label: 'Italian' },
+    { id: 'mexican', label: 'Mexican' },
+    { id: 'bbq', label: 'BBQ' },
+    { id: 'american', label: 'American' },
+    { id: 'asian', label: 'Asian' },
+    { id: 'other', label: 'Other' }
+  ];
+  const OCCASION_OPTS = [
+    { id: 'weeknight', label: 'Weeknight' },
+    { id: 'date-night', label: 'Date night' },
+    { id: 'holiday', label: 'Holiday' },
+    { id: 'meal-prep', label: 'Meal prep' },
+    { id: 'other', label: 'Other' }
+  ];
+  const DIFFICULTY_OPTS = [
+    { id: 'easy', label: 'Easy' },
+    { id: 'medium', label: 'Medium' },
+    { id: 'hard', label: 'Hard' }
+  ];
+  const DIFFICULTY_RANK = { easy: 1, medium: 2, hard: 3 };
+  const SUBSTITUTIONS = [
+    { keys: ['heavy cream', 'heavy whipping cream', 'whipping cream'],
+      suggest: (ing) => ({ text: 'milk + butter', detail: '¾ cup milk + ¼ cup melted butter per 1 cup cream', factor: 1 }) },
+    { keys: ['buttermilk'],
+      suggest: (ing) => ({ text: 'milk + lemon/vinegar', detail: '1 cup milk + 1 tbsp lemon juice or vinegar (rest 5 min)', factor: 1 }) },
+    { keys: ['sour cream'],
+      suggest: (ing) => ({ text: 'Greek yogurt', detail: '1:1 plain Greek yogurt', factor: 1 }) },
+    { keys: ['butter', 'unsalted butter', 'salted butter'],
+      suggest: (ing) => ({ text: 'oil or margarine', detail: '¾ amount oil, or 1:1 margarine', factor: 0.75 }) },
+    { keys: ['egg', 'eggs'],
+      suggest: (ing) => ({ text: 'flax egg', detail: '1 tbsp ground flax + 3 tbsp water per egg', factor: 1 }) },
+    { keys: ['cornstarch', 'corn starch'],
+      suggest: (ing) => ({ text: 'all-purpose flour', detail: '2× flour (cook longer)', factor: 2 }) },
+    { keys: ['all-purpose flour', 'flour', 'ap flour'],
+      suggest: (ing) => ({ text: 'almond or gluten-free flour', detail: 'start 1:1; texture may differ', factor: 1 }) },
+    { keys: ['brown sugar', 'light brown sugar', 'dark brown sugar'],
+      suggest: (ing) => ({ text: 'white sugar + molasses', detail: '1 cup white + 1 tbsp molasses', factor: 1 }) },
+    { keys: ['honey'],
+      suggest: (ing) => ({ text: 'maple syrup or agave', detail: '1:1 maple syrup or agave', factor: 1 }) },
+    { keys: ['soy sauce'],
+      suggest: (ing) => ({ text: 'tamari or coconut aminos', detail: '1:1 tamari; coconut aminos slightly sweeter', factor: 1 }) },
+    { keys: ['garlic clove', 'garlic cloves', 'garlic'],
+      suggest: (ing) => ({ text: 'garlic powder', detail: '¼ tsp powder per clove', factor: 0.25 }) },
+    { keys: ['onion', 'yellow onion', 'white onion'],
+      suggest: (ing) => ({ text: 'onion powder or shallot', detail: '1 tbsp powder per medium onion, or 1:1 shallot', factor: 1 }) },
+    { keys: ['fresh lemon juice', 'lemon juice'],
+      suggest: (ing) => ({ text: 'bottled lemon or vinegar', detail: '1:1 bottled lemon; or ½ white vinegar', factor: 1 }) },
+    { keys: ['chicken broth', 'chicken stock', 'beef broth', 'vegetable broth', 'stock', 'broth'],
+      suggest: (ing) => ({ text: 'bouillon + water', detail: '1 cup water + 1 tsp bouillon per cup broth', factor: 1 }) },
+    { keys: ['mayonnaise', 'mayo'],
+      suggest: (ing) => ({ text: 'Greek yogurt or sour cream', detail: '1:1 for dressings/spreads', factor: 1 }) },
+    { keys: ['milk', 'whole milk', '2% milk'],
+      suggest: (ing) => ({ text: 'plant milk or evaporated milk', detail: '1:1 unsweetened plant milk', factor: 1 }) },
+    { keys: ['parmesan', 'parmesan cheese', 'pecorino'],
+      suggest: (ing) => ({ text: 'asiago or nutritional yeast', detail: '1:1 hard cheese; or ½ nutritional yeast', factor: 1 }) },
+    { keys: ['bacon'],
+      suggest: (ing) => ({ text: 'pancetta or smoked turkey', detail: '1:1 pancetta; or smoked turkey for lighter', factor: 1 }) },
+    { keys: ['shallot', 'shallots'],
+      suggest: (ing) => ({ text: 'onion + garlic', detail: 'equal onion + pinch garlic', factor: 1 }) },
+    { keys: ['rice vinegar'],
+      suggest: (ing) => ({ text: 'apple cider vinegar', detail: '1:1 apple cider vinegar (milder)', factor: 1 }) }
+  ];
+
+  // Optional baked-in US grocery averages (offline). Overrides in state.priceOverrides win.
+  const AVERAGE_PRICES = [
+    { id: 'gold-potatoes', name: 'Gold potatoes', unit: 'lb', price: 1.49, keys: ['gold potatoes', 'yukon gold', 'yellow potatoes', 'baby gold potatoes'] },
+    { id: 'russet-potatoes', name: 'Russet potatoes', unit: 'lb', price: 0.89, keys: ['russet', 'russet potatoes', 'baking potatoes'] },
+    { id: 'potatoes-5lb', name: 'Potatoes (5 lb bag)', unit: 'bag', price: 3.99, keys: ['5lb bag of potatoes', '5 lb potatoes', 'potato bag', 'bag of potatoes'] },
+    { id: 'potatoes', name: 'Potatoes', unit: 'lb', price: 0.99, keys: ['potato', 'potatoes'] },
+    { id: 'sweet-potato', name: 'Sweet potatoes', unit: 'lb', price: 1.29, keys: ['sweet potato', 'sweet potatoes', 'yam', 'yams'] },
+    { id: 'fettuccine', name: 'Fettuccine', unit: 'lb', price: 1.79, keys: ['fettuccine', 'fettuccini'] },
+    { id: 'spaghetti', name: 'Spaghetti', unit: 'lb', price: 1.49, keys: ['spaghetti'] },
+    { id: 'pasta', name: 'Pasta (dry)', unit: 'lb', price: 1.59, keys: ['pasta', 'penne', 'rigatoni', 'linguine', 'noodles'] },
+    { id: 'lemons', name: 'Lemons', unit: 'each', price: 0.69, keys: ['lemon', 'lemons'] },
+    { id: 'limes', name: 'Limes', unit: 'each', price: 0.49, keys: ['lime', 'limes'] },
+    { id: 'milk', name: 'Milk (whole)', unit: 'gallon', price: 3.79, keys: ['milk', 'whole milk', '2% milk'] },
+    { id: 'heavy-cream', name: 'Heavy cream', unit: 'pint', price: 3.49, keys: ['heavy cream', 'heavy whipping cream', 'whipping cream'] },
+    { id: 'half-half', name: 'Half-and-half', unit: 'pint', price: 2.49, keys: ['half and half', 'half-and-half'] },
+    { id: 'butter', name: 'Butter', unit: 'lb', price: 4.49, keys: ['butter', 'unsalted butter', 'salted butter'] },
+    { id: 'eggs', name: 'Eggs (dozen)', unit: 'dozen', price: 2.99, keys: ['egg', 'eggs', 'large eggs'] },
+    { id: 'flour', name: 'All-purpose flour', unit: 'lb', price: 0.65, keys: ['flour', 'all purpose flour', 'all-purpose flour', 'ap flour'] },
+    { id: 'sugar', name: 'Granulated sugar', unit: 'lb', price: 0.79, keys: ['sugar', 'granulated sugar', 'white sugar'] },
+    { id: 'brown-sugar', name: 'Brown sugar', unit: 'lb', price: 1.19, keys: ['brown sugar'] },
+    { id: 'olive-oil', name: 'Olive oil', unit: '16oz', price: 8.99, keys: ['olive oil', 'extra virgin olive oil', 'evoo'] },
+    { id: 'veg-oil', name: 'Vegetable oil', unit: '48oz', price: 4.49, keys: ['vegetable oil', 'canola oil', 'cooking oil'] },
+    { id: 'onion', name: 'Onion', unit: 'each', price: 0.89, keys: ['onion', 'onions', 'yellow onion', 'white onion'] },
+    { id: 'garlic', name: 'Garlic', unit: 'head', price: 0.79, keys: ['garlic', 'garlic clove', 'garlic cloves'] },
+    { id: 'shallot', name: 'Shallot', unit: 'each', price: 0.59, keys: ['shallot', 'shallots'] },
+    { id: 'chicken-breast', name: 'Chicken breast', unit: 'lb', price: 3.99, keys: ['chicken breast', 'chicken breasts', 'boneless chicken'] },
+    { id: 'chicken-thigh', name: 'Chicken thighs', unit: 'lb', price: 2.49, keys: ['chicken thigh', 'chicken thighs'] },
+    { id: 'chicken', name: 'Chicken', unit: 'lb', price: 2.29, keys: ['chicken', 'whole chicken'] },
+    { id: 'ground-beef', name: 'Ground beef', unit: 'lb', price: 5.49, keys: ['ground beef', 'hamburger meat', 'beef mince'] },
+    { id: 'beef-stew', name: 'Beef stew meat', unit: 'lb', price: 6.49, keys: ['stew meat', 'beef stew', 'chuck roast'] },
+    { id: 'steak', name: 'Steak', unit: 'lb', price: 12.99, keys: ['steak', 'ribeye', 'sirloin', 'strip steak'] },
+    { id: 'brisket', name: 'Brisket', unit: 'lb', price: 7.99, keys: ['brisket'] },
+    { id: 'pork-chop', name: 'Pork chops', unit: 'lb', price: 3.99, keys: ['pork chop', 'pork chops'] },
+    { id: 'bacon', name: 'Bacon', unit: 'lb', price: 6.49, keys: ['bacon'] },
+    { id: 'sausage', name: 'Sausage', unit: 'lb', price: 4.99, keys: ['sausage', 'italian sausage'] },
+    { id: 'salmon', name: 'Salmon', unit: 'lb', price: 11.99, keys: ['salmon', 'salmon fillet'] },
+    { id: 'shrimp', name: 'Shrimp', unit: 'lb', price: 9.99, keys: ['shrimp', 'prawns'] },
+    { id: 'cheddar', name: 'Cheddar cheese', unit: 'lb', price: 5.49, keys: ['cheddar', 'cheddar cheese', 'sharp cheddar'] },
+    { id: 'mozarella', name: 'Mozzarella', unit: 'lb', price: 4.99, keys: ['mozzarella', 'mozarella'] },
+    { id: 'parmesan', name: 'Parmesan', unit: '8oz', price: 5.99, keys: ['parmesan', 'parmesan cheese', 'parm'] },
+    { id: 'cream-cheese', name: 'Cream cheese', unit: '8oz', price: 2.49, keys: ['cream cheese'] },
+    { id: 'sour-cream', name: 'Sour cream', unit: '16oz', price: 2.29, keys: ['sour cream'] },
+    { id: 'rice', name: 'White rice', unit: 'lb', price: 1.19, keys: ['rice', 'white rice', 'long grain rice'] },
+    { id: 'brown-rice', name: 'Brown rice', unit: 'lb', price: 1.49, keys: ['brown rice'] },
+    { id: 'beans-can', name: 'Canned beans', unit: 'can', price: 1.19, keys: ['black beans', 'pinto beans', 'kidney beans', 'canned beans', 'chickpeas', 'garbanzo'] },
+    { id: 'tomato-can', name: 'Canned tomatoes', unit: 'can', price: 1.49, keys: ['canned tomatoes', 'diced tomatoes', 'crushed tomatoes', 'tomato sauce'] },
+    { id: 'tomato-fresh', name: 'Tomatoes', unit: 'lb', price: 1.99, keys: ['tomato', 'tomatoes', 'roma tomato'] },
+    { id: 'bell-pepper', name: 'Bell pepper', unit: 'each', price: 1.29, keys: ['bell pepper', 'bell peppers', 'red pepper', 'green pepper'] },
+    { id: 'carrot', name: 'Carrots', unit: 'lb', price: 0.99, keys: ['carrot', 'carrots'] },
+    { id: 'celery', name: 'Celery', unit: 'bunch', price: 1.79, keys: ['celery'] },
+    { id: 'broccoli', name: 'Broccoli', unit: 'lb', price: 1.99, keys: ['broccoli'] },
+    { id: 'spinach', name: 'Spinach', unit: 'bunch', price: 2.49, keys: ['spinach', 'baby spinach'] },
+    { id: 'lettuce', name: 'Lettuce', unit: 'head', price: 1.99, keys: ['lettuce', 'romaine', 'iceberg'] },
+    { id: 'avocado', name: 'Avocado', unit: 'each', price: 1.49, keys: ['avocado', 'avocados'] },
+    { id: 'bread', name: 'Bread loaf', unit: 'loaf', price: 2.99, keys: ['bread', 'sandwich bread'] },
+    { id: 'tortillas', name: 'Tortillas', unit: 'pack', price: 2.99, keys: ['tortilla', 'tortillas', 'flour tortillas', 'corn tortillas'] },
+    { id: 'broth', name: 'Chicken broth', unit: '32oz', price: 2.29, keys: ['chicken broth', 'chicken stock', 'broth', 'stock', 'beef broth', 'vegetable broth'] },
+    { id: 'soy-sauce', name: 'Soy sauce', unit: '10oz', price: 2.49, keys: ['soy sauce'] },
+    { id: 'salt', name: 'Salt', unit: '26oz', price: 1.29, keys: ['salt', 'kosher salt', 'sea salt'] },
+    { id: 'pepper', name: 'Black pepper', unit: '3oz', price: 3.49, keys: ['black pepper', 'pepper', 'ground pepper'] },
+    { id: 'honey', name: 'Honey', unit: '12oz', price: 4.99, keys: ['honey'] },
+    { id: 'maple', name: 'Maple syrup', unit: '8oz', price: 6.99, keys: ['maple syrup'] },
+    { id: 'yogurt', name: 'Yogurt', unit: '32oz', price: 3.99, keys: ['yogurt', 'greek yogurt'] },
+    { id: 'mayo', name: 'Mayonnaise', unit: '30oz', price: 4.49, keys: ['mayonnaise', 'mayo'] },
+    { id: 'ketchup', name: 'Ketchup', unit: '20oz', price: 2.29, keys: ['ketchup'] },
+    { id: 'mustard', name: 'Mustard', unit: '14oz', price: 1.99, keys: ['mustard', 'dijon mustard'] }
+  ];
+
+  let state = { app: 'recipe-saver', version: 2, recipes: [], pantry: [], mealPlan: {}, lastExportAt: null, priceOverrides: {} };
+  let ui = {
+    tab: 'recipes', search: '',
+    protein: new Set(), cook: new Set(), cost: new Set(),
+    cuisine: new Set(), occasion: new Set(), difficulty: new Set(),
+    sort: 'date', weekOffset: 0, shopSelected: new Set(),
+    excludePantry: true, showArchive: false, backupDismissed: false,
+    sheetMode: null, editId: null, detailScale: null,
+    pendingPhoto: null, ratingValue: null, pendingDifficulty: null,
+    speechRec: null, listening: false,
+    cook: { recipeId: null, steps: [], index: 0 },
+    timers: [], timerTick: null,
+    priceFilter: ''
+  };
+
+  const $ = (sel, root) => (root || document).querySelector(sel);
+  const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
+
+  function uid() {
+    return 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  }
+
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function toast(msg) {
+    const el = $('#toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(toast._t);
+    toast._t = setTimeout(() => el.classList.remove('show'), 2600);
+  }
+
+  function load() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          state = {
+            app: 'recipe-saver', version: 2,
+            recipes: Array.isArray(parsed.recipes) ? parsed.recipes : [],
+            pantry: Array.isArray(parsed.pantry) ? parsed.pantry : [],
+            mealPlan: parsed.mealPlan && typeof parsed.mealPlan === 'object' ? parsed.mealPlan : {},
+            lastExportAt: parsed.lastExportAt || null,
+            priceOverrides: parsed.priceOverrides && typeof parsed.priceOverrides === 'object' ? parsed.priceOverrides : {}
+          };
+          return;
+        }
+      }
+    } catch (e) {}
+    try {
+      const legacy = localStorage.getItem(LEGACY_KEY);
+      if (legacy) {
+        const arr = JSON.parse(legacy);
+        if (Array.isArray(arr)) {
+          state.recipes = arr.map(normalizeRecipe);
+          save();
+        }
+      }
+    } catch (e) {}
+  }
+
+  function normalizeRecipe(r) {
+    const now = new Date().toISOString();
+    let steps = [];
+    if (Array.isArray(r.steps)) steps = r.steps.map(s => String(s || '').trim()).filter(Boolean);
+    else if (typeof r.stepsText === 'string' && r.stepsText.trim()) {
+      steps = r.stepsText.split(/\n+/).map(s => s.trim()).filter(Boolean);
+    }
+    const missing = Array.isArray(r.missingIngredients) ? r.missingIngredients.map(normName).filter(Boolean) : [];
+    const customSubs = r.customSubstitutions && typeof r.customSubstitutions === 'object' ? r.customSubstitutions : {};
+    return {
+      id: r.id || uid(),
+      name: r.name || 'Untitled',
+      url: r.url || '',
+      platform: r.platform || detectPlatform(r.url || ''),
+      category: r.category || '',
+      notes: r.notes || '',
+      ingredients: Array.isArray(r.ingredients) ? r.ingredients.map(normalizeIng) : [],
+      steps,
+      servingsDefault: r.servingsDefault != null ? Number(r.servingsDefault) : (r.servings != null ? Number(r.servings) : null),
+      modifications: r.modifications || '',
+      made: !!r.made,
+      rating: r.rating != null ? Number(r.rating) : null,
+      ratingNote: r.ratingNote || '',
+      photo: r.photo || null,
+      protein: r.protein || '',
+      cuisine: r.cuisine || '',
+      occasion: r.occasion || '',
+      difficulty: (r.difficulty === 'easy' || r.difficulty === 'medium' || r.difficulty === 'hard') ? r.difficulty : '',
+      cookMinutes: r.cookMinutes != null && r.cookMinutes !== '' ? Number(r.cookMinutes) : null,
+      cost: r.cost != null && r.cost !== '' ? Number(r.cost) : null,
+      recipeCost: r.recipeCost != null && r.recipeCost !== '' && Number.isFinite(Number(r.recipeCost)) ? Number(r.recipeCost) : null,
+      archived: !!r.archived,
+      missingIngredients: missing,
+      customSubstitutions: customSubs,
+      createdAt: r.createdAt || now,
+      updatedAt: r.updatedAt || now
+    };
+  }
+
+  function normalizeIng(ing) {
+    if (typeof ing === 'string') return parseIngredientLine(ing);
+    return {
+      raw: ing.raw || '',
+      qty: ing.qty != null ? ing.qty : null,
+      unit: ing.unit || '',
+      name: ing.name || ing.raw || ''
+    };
+  }
+
+  function save() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch (e) {
+      toast('Storage full — try removing a photo or exporting then clearing.');
+    }
+  }
+
+  function detectPlatform(url) {
+    const u = (url || '').toLowerCase();
+    if (u.includes('tiktok.com') || u.includes('vm.tiktok')) return 'tiktok';
+    if (u.includes('instagram.com') || u.includes('instagr.am')) return 'instagram';
+    if (u.includes('youtube.com') || u.includes('youtu.be')) return 'youtube';
+    return 'web';
+  }
+
+  function domainOf(url) {
+    try { return new URL(url).hostname.replace(/^www\./, ''); }
+    catch { return (url || '').slice(0, 40); }
+  }
+
+  function parseFraction(tok) {
+    tok = String(tok).trim();
+    if (!tok) return null;
+    const mixed = tok.match(/^(\d+)\s+(\d+)\/(\d+)$/);
+    if (mixed) return Number(mixed[1]) + Number(mixed[2]) / Number(mixed[3]);
+    const frac = tok.match(/^(\d+)\/(\d+)$/);
+    if (frac) return Number(frac[1]) / Number(frac[2]);
+    const n = Number(tok);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function parseIngredientLine(line) {
+    const raw = String(line || '').trim();
+    if (!raw) return { raw: '', qty: null, unit: '', name: '' };
+    const parts = raw.split(/\s+/);
+    let i = 0;
+    let qty = null;
+    const q1 = parseFraction(parts[0]);
+    if (q1 != null) {
+      qty = q1; i = 1;
+      if (parts[1]) {
+        const q2 = parseFraction(parts[1]);
+        if (q2 != null && q2 < 1) { qty += q2; i = 2; }
+      }
+    }
+    let unit = '';
+    if (parts[i]) {
+      const cand = parts[i].toLowerCase().replace(/[.,]$/, '');
+      if (UNITS.includes(cand)) { unit = cand; i++; }
+    }
+    const name = parts.slice(i).join(' ').trim() || raw;
+    return { raw, qty, unit, name };
+  }
+
+  function parseIngredientsText(text) {
+    return String(text || '').split(/\n+/).map(l => l.trim()).filter(Boolean).map(parseIngredientLine);
+  }
+
+  function ingredientsToText(ings) {
+    return (ings || []).map(i => i.raw || [i.qty, i.unit, i.name].filter(Boolean).join(' ')).join('\n');
+  }
+
+  function formatQty(n) {
+    if (n == null || !Number.isFinite(n)) return '';
+    const sign = n < 0 ? '-' : '';
+    n = Math.abs(n);
+    const whole = Math.floor(n + 1e-9);
+    const frac = n - whole;
+    const fracs = [[0.125,'⅛'],[0.25,'¼'],[0.333,'⅓'],[0.375,'⅜'],[0.5,'½'],[0.625,'⅝'],[0.666,'⅔'],[0.75,'¾'],[0.875,'⅞']];
+    let f = '';
+    for (const [v, s] of fracs) {
+      if (Math.abs(frac - v) < 0.04) { f = s; break; }
+    }
+    if (f) return sign + (whole ? whole + ' ' + f : f);
+    if (Math.abs(n - Math.round(n)) < 0.05) return sign + String(Math.round(n));
+    return sign + (Math.round(n * 10) / 10).toString();
+  }
+
+  function scaleIngredient(ing, factor) {
+    if (ing.qty == null) return { ...ing, display: ing.raw || ing.name };
+    const q = ing.qty * factor;
+    const bits = [formatQty(q), ing.unit, ing.name].filter(Boolean);
+    return { ...ing, display: bits.join(' ') };
+  }
+
+  function costLabel(c) {
+    if (!c) return '';
+    return '$'.repeat(Math.min(4, Math.max(1, Number(c))));
+  }
+  function recipeServings(r) {
+    return (r.servingsDefault != null && Number(r.servingsDefault) > 0) ? Number(r.servingsDefault) : 1;
+  }
+  function getOverridePrice(stapleId) {
+    const o = (state.priceOverrides || {})[stapleId];
+    if (o == null || o === '') return null;
+    const n = Number(o);
+    return Number.isFinite(n) && n >= 0 ? n : null;
+  }
+  function effectiveStaplePrice(staple) {
+    const ov = getOverridePrice(staple.id);
+    return ov != null ? ov : Number(staple.price);
+  }
+  function findStapleForName(name) {
+    const n = normName(name);
+    if (!n) return null;
+    let best = null, bestScore = 0;
+    for (const s of AVERAGE_PRICES) {
+      for (const k of s.keys) {
+        const nk = normName(k);
+        if (!nk) continue;
+        if (n === nk) return s;
+        if (n.includes(nk) || nk.includes(n)) {
+          const score = nk.length + (n.includes(nk) ? 10 : 0);
+          if (score > bestScore) { best = s; bestScore = score; }
+        } else if (namesOverlap(n, nk)) {
+          const score = Math.min(nk.length, n.length);
+          if (score > bestScore) { best = s; bestScore = score; }
+        }
+      }
+    }
+    return best;
+  }
+  function unitToStapleFactor(ingUnit, stapleUnit) {
+    const u = normName(ingUnit).replace(/\s+/g, '');
+    const s = normName(stapleUnit).replace(/\s+/g, '');
+    if (!u || !s) return 1;
+    if (u === s) return 1;
+    // rough kitchen conversions toward common grocery units
+    const map = {
+      // to lb
+      'oz_lb': 1/16, 'ounce_lb': 1/16, 'ounces_lb': 1/16,
+      'g_lb': 1/453.6, 'gram_lb': 1/453.6, 'grams_lb': 1/453.6,
+      'kg_lb': 2.204, 'kilogram_lb': 2.204,
+      // cups toward pint/gallon for liquids when staples are pint/gallon
+      'cup_pint': 0.5, 'cups_pint': 0.5, 'tbsp_pint': 1/32, 'tablespoon_pint': 1/32, 'tablespoons_pint': 1/32,
+      'cup_gallon': 1/16, 'cups_gallon': 1/16,
+      'pint_gallon': 0.125, 'pints_gallon': 0.125,
+      'ml_pint': 1/473, 'milliliter_pint': 1/473, 'milliliters_pint': 1/473,
+      'clove_head': 1/10, 'cloves_head': 1/10,
+      'slice_lb': 1/16, 'slices_lb': 1/16
+    };
+    const key = u + '_' + s;
+    if (map[key] != null) return map[key];
+    // same family aliases
+    if ((u === 'lb' || u === 'pound' || u === 'pounds' || u === 'lbs') && s === 'lb') return 1;
+    if ((u === 'each' || u === 'piece' || u === 'pieces' || u === 'whole') && (s === 'each' || s === 'head' || s === 'bunch')) return 1;
+    return 1; // unit assumption
+  }
+  function ingredientEstimatedCost(ing) {
+    const staple = findStapleForName(ing.name || ing.raw || '');
+    if (!staple) return null;
+    const price = effectiveStaplePrice(staple);
+    if (!Number.isFinite(price)) return null;
+    let qty = ing.qty != null && Number.isFinite(Number(ing.qty)) ? Number(ing.qty) : 1;
+    if (qty <= 0) qty = 1;
+    const factor = unitToStapleFactor(ing.unit || '', staple.unit);
+    // Cap runaway estimates (e.g. "2 cups flour" vs flour priced per lb ~ 4 cups/lb)
+    let amount = qty * factor;
+    const u = normName(ing.unit);
+    if ((u === 'cup' || u === 'cups') && normName(staple.unit) === 'lb' && /flour|sugar|rice|butter/.test(normName(staple.name))) {
+      amount = qty / 4; // ~4 cups per lb
+    }
+    if ((u === 'tbsp' || u === 'tablespoon' || u === 'tablespoons') && /oil|butter|cream/.test(normName(staple.name) + ' ' + normName(staple.id))) {
+      amount = qty / 32; // rough toward pint/16oz bottle
+    }
+    const cost = price * amount;
+    if (!Number.isFinite(cost) || cost < 0) return null;
+    return { cost: Math.round(cost * 100) / 100, staple, price };
+  }
+  function estimateRecipeCost(r) {
+    const ings = r.ingredients || [];
+    if (!ings.length) return null;
+    let total = 0, matched = 0;
+    ings.forEach(ing => {
+      const est = ingredientEstimatedCost(ing);
+      if (est) { total += est.cost; matched++; }
+    });
+    if (!matched) return null;
+    const servings = recipeServings(r);
+    const perServing = Math.round((total / servings) * 100) / 100;
+    return { total: Math.round(total * 100) / 100, matched, servings, perServing };
+  }
+  function recipeCostPerServing(r) {
+    // Manual total wins when set
+    if (r.recipeCost != null && Number.isFinite(Number(r.recipeCost))) {
+      const per = Number(r.recipeCost) / recipeServings(r);
+      if (!Number.isFinite(per)) return null;
+      return Math.round(per * 100) / 100;
+    }
+    // Else silent estimate from price table / overrides when ≥1 ingredient matched
+    const est = estimateRecipeCost(r);
+    return est ? est.perServing : null;
+  }
+  function recipeCostSource(r) {
+    if (r.recipeCost != null && Number.isFinite(Number(r.recipeCost))) return 'manual';
+    if (estimateRecipeCost(r)) return 'estimate';
+    return null;
+  }
+  function formatMoney(n) {
+    if (n == null || !Number.isFinite(Number(n))) return '';
+    const v = Number(n);
+    return '$' + (Math.abs(v - Math.round(v)) < 0.005 ? String(Math.round(v)) : v.toFixed(2));
+  }
+  function setPriceOverride(stapleId, value) {
+    if (!state.priceOverrides) state.priceOverrides = {};
+    if (value === '' || value == null) {
+      delete state.priceOverrides[stapleId];
+    } else {
+      const n = Number(value);
+      if (!Number.isFinite(n) || n < 0) return false;
+      state.priceOverrides[stapleId] = Math.round(n * 100) / 100;
+    }
+    save();
+    return true;
+  }
+  function recipesICanMakeTonight() {
+    return activeRecipes().filter(r => {
+      const ings = r.ingredients || [];
+      if (!ings.length) return false;
+      return ings.every(ing =>
+        state.pantry.some(p => (Number(p.qty) || 0) > 0 && namesOverlap(p.name, ing.name || ing.raw))
+      );
+    }).sort((a, b) => a.name.localeCompare(b.name));
+  }
+  function openTonightSheet() {
+    const list = recipesICanMakeTonight();
+    ui.sheetMode = 'tonight';
+    ui.editId = null;
+    if (!list.length) {
+      openSheet(`
+        <h2>What can I make tonight?</h2>
+        <div class="empty"><strong>Nothing fully covered</strong>No non-archived recipe has every ingredient in your pantry (qty &gt; 0). Stock the pantry or add ingredients to recipes.</div>
+        <button class="btn btn-secondary btn-block" type="button" id="cancelSheet">Close</button>`);
+      return;
+    }
+    openSheet(`
+      <h2>What can I make tonight?</h2>
+      <p class="form-hint" style="margin-bottom:10px">${esc(list.length)} recipe${list.length === 1 ? '' : 's'} you can cook with zero shopping — every ingredient is already in your pantry.</p>
+      <div class="action-list tonight-list">
+        ${list.map(r => `<button type="button" class="action-item" data-tonight-id="${esc(r.id)}">🍽 ${esc(r.name)}${r.cookMinutes != null ? ' · ' + esc(r.cookMinutes) + ' min' : ''}</button>`).join('')}
+        <button type="button" class="action-item" id="cancelSheet">Close</button>
+      </div>`);
+  }
+  function openPricesSheet() {
+    ui.sheetMode = 'prices';
+    const q = (ui.priceFilter || '').trim().toLowerCase();
+    const rows = AVERAGE_PRICES.filter(s => {
+      if (!q) return true;
+      const blob = (s.name + ' ' + s.keys.join(' ')).toLowerCase();
+      return blob.includes(q);
+    }).map(s => {
+      const ov = getOverridePrice(s.id);
+      const shown = ov != null ? ov : '';
+      return `<div class="price-row" data-staple="${esc(s.id)}">
+        <div style="flex:1;min-width:140px">
+          <div class="pname">${esc(s.name)}</div>
+          <div class="punit">per ${esc(s.unit)} · avg ${esc(formatMoney(s.price))}${ov != null ? ' · using your price' : ''}</div>
+        </div>
+        <input type="number" inputmode="decimal" min="0" step="0.01" data-price-id="${esc(s.id)}" value="${shown !== '' ? esc(shown) : ''}" placeholder="${esc(s.price)}" aria-label="Your price for ${esc(s.name)}">
+      </div>`;
+    }).join('');
+    openSheet(`
+      <h2>Staple prices</h2>
+      <p class="form-hint" style="margin-bottom:8px">Optional US averages for cost estimates. Set what you pay locally — that override applies to every recipe using that ingredient. Never required.</p>
+      <div class="form-group"><label for="priceSearch">Find staple</label>
+        <input id="priceSearch" value="${esc(ui.priceFilter || '')}" placeholder="e.g. gold potatoes" autocomplete="off"></div>
+      <div style="max-height:50vh;overflow:auto">${rows || '<p class="form-hint">No matches</p>'}</div>
+      <div class="form-actions">
+        <button class="btn btn-secondary" type="button" id="resetAllPricesBtn">Clear overrides</button>
+        <button class="btn btn-primary" type="button" id="savePricesBtn">Save prices</button>
+      </div>`);
+  }
+
+  function proteinLabel(p) {
+    const f = PROTEIN_OPTS.find(x => x.id === p);
+    return f ? f.label : '';
+  }
+
+  function openSheet(html) {
+    $('#sheetBody').innerHTML = html;
+    $('#backdrop').classList.add('open');
+    $('#sheet').classList.add('open');
+  }
+  function closeSheet() {
+    $('#backdrop').classList.remove('open');
+    $('#sheet').classList.remove('open');
+    ui.sheetMode = null;
+    ui.editId = null;
+    ui.pendingPhoto = null;
+    ui.ratingValue = null;
+    ui.pendingDifficulty = null;
+    stopListening();
+  }
+
+  function getSpeechRecognition() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    return SR ? new SR() : null;
+  }
+
+  function stopListening() {
+    if (ui.speechRec) {
+      try { ui.speechRec.stop(); } catch (e) {}
+      ui.speechRec = null;
+    }
+    ui.listening = false;
+    $$('.mic-btn').forEach(b => b.classList.remove('listening'));
+  }
+
+  function startDictation(textareaId) {
+    const ta = document.getElementById(textareaId);
+    if (!ta) return;
+    stopListening();
+    const rec = getSpeechRecognition();
+    if (!rec) {
+      toast('Voice not supported — type your changes instead.');
+      ta.focus();
+      return;
+    }
+    ui.speechRec = rec;
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.lang = 'en-US';
+    let finalBase = ta.value;
+    if (finalBase && !/\s$/.test(finalBase)) finalBase += ' ';
+    rec.onresult = (ev) => {
+      let interim = '';
+      let finals = '';
+      for (let i = 0; i < ev.results.length; i++) {
+        const t = ev.results[i][0].transcript;
+        if (ev.results[i].isFinal) finals += t + ' ';
+        else interim += t;
+      }
+      ta.value = finalBase + finals + interim;
+    };
+    rec.onerror = () => { stopListening(); toast('Mic error — try typing.'); };
+    rec.onend = () => { ui.listening = false; $$('.mic-btn').forEach(b => b.classList.remove('listening')); };
+    try {
+      rec.start();
+      ui.listening = true;
+      $$('.mic-btn').forEach(b => b.classList.add('listening'));
+      toast('Listening… tap mic again to stop');
+    } catch (e) {
+      toast('Could not start mic');
+    }
+  }
+
+  function toggleMic(textareaId) {
+    if (ui.listening) stopListening();
+    else startDictation(textareaId);
+  }
+
+  async function fetchViaProxies(url) {
+    const encoded = encodeURIComponent(url);
+    const proxies = [
+      'https://api.allorigins.win/raw?url=' + encoded,
+      'https://corsproxy.io/?' + encoded
+    ];
+    let lastErr = null;
+    for (const p of proxies) {
+      try {
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), 12000);
+        const res = await fetch(p, { signal: ctrl.signal });
+        clearTimeout(t);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const text = await res.text();
+        if (text && text.length > 40) return text;
+      } catch (e) { lastErr = e; }
+    }
+    try {
+      const res = await fetch(url, { mode: 'cors' });
+      if (res.ok) return await res.text();
+    } catch (e) { lastErr = e; }
+    throw lastErr || new Error('Fetch failed');
+  }
+
+  function extractIngredientsFromHtml(html) {
+    const found = [];
+    try {
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      const scripts = doc.querySelectorAll('script[type="application/ld+json"]');
+      scripts.forEach(s => {
+        try {
+          let data = JSON.parse(s.textContent);
+          const list = Array.isArray(data) ? data : [data];
+          const queue = [...list];
+          while (queue.length) {
+            const node = queue.shift();
+            if (!node || typeof node !== 'object') continue;
+            if (Array.isArray(node['@graph'])) queue.push(...node['@graph']);
+            const type = node['@type'];
+            const isRecipe = type === 'Recipe' || (Array.isArray(type) && type.includes('Recipe'));
+            if (isRecipe && node.recipeIngredient) {
+              const ings = Array.isArray(node.recipeIngredient) ? node.recipeIngredient : [node.recipeIngredient];
+              ings.forEach(x => { if (x) found.push(String(x).trim()); });
+            }
+          }
+        } catch (e) {}
+      });
+      if (found.length) return found;
+      const selectors = [
+        '[itemprop="recipeIngredient"]',
+        '.recipe-ingredients li', '.ingredients li',
+        '.wprm-recipe-ingredient', '.tasty-recipes-ingredients li',
+        'ul.ingredients li', '.ingredient-list li'
+      ];
+      for (const sel of selectors) {
+        doc.querySelectorAll(sel).forEach(el => {
+          const t = el.textContent.replace(/\s+/g, ' ').trim();
+          if (t) found.push(t);
+        });
+        if (found.length) break;
+      }
+    } catch (e) {}
+    return [...new Set(found)];
+  }
+
+  function compressImage(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('read fail'));
+      reader.onload = () => {
+        const img = new Image();
+        img.onload = () => {
+          const max = 800;
+          let w = img.width, h = img.height;
+          if (w > max || h > max) {
+            if (w > h) { h = Math.round(h * max / w); w = max; }
+            else { w = Math.round(w * max / h); h = max; }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, w, h);
+          resolve(canvas.toDataURL('image/jpeg', 0.7));
+        };
+        img.onerror = () => reject(new Error('img fail'));
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function startOfWeek(offset) {
+    const d = new Date();
+    d.setHours(12, 0, 0, 0);
+    const day = (d.getDay() + 6) % 7;
+    d.setDate(d.getDate() - day + offset * 7);
+    return d;
+  }
+  function ymd(d) {
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+  function weekDates(offset) {
+    const start = startOfWeek(offset);
+    const days = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      days.push(d);
+    }
+    return days;
+  }
+  function thisWeekRecipeIds() {
+    const ids = new Set();
+    weekDates(ui.weekOffset).forEach(d => {
+      const key = ymd(d);
+      (state.mealPlan[key] || []).forEach(id => ids.add(id));
+    });
+    return [...ids];
+  }
+
+  function normName(s) {
+    return String(s || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+  function namesOverlap(a, b) {
+    const na = normName(a), nb = normName(b);
+    if (!na || !nb) return false;
+    if (na === nb) return true;
+    if (na.includes(nb) || nb.includes(na)) return true;
+    const wa = new Set(na.split(' ').filter(w => w.length > 2));
+    const wb = nb.split(' ').filter(w => w.length > 2);
+    if (!wa.size || !wb.length) return false;
+    let hit = 0;
+    wb.forEach(w => { if (wa.has(w)) hit++; });
+    return hit >= Math.min(2, wb.length) || (wb.length === 1 && hit === 1);
+  }
+  function recipePantryMatch(recipe) {
+    const ings = recipe.ingredients || [];
+    if (!ings.length) return { pct: 0, matched: [], missing: [] };
+    const matched = [];
+    const missing = [];
+    ings.forEach(ing => {
+      const hit = state.pantry.find(p => p.qty > 0 && namesOverlap(p.name, ing.name || ing.raw));
+      if (hit) matched.push({ ing, pantry: hit });
+      else missing.push(ing);
+    });
+    const pct = Math.round((matched.length / ings.length) * 100);
+    return { pct, matched, missing };
+  }
+
+  function mergeIngredients(recipes) {
+    const map = new Map();
+    const loose = [];
+    recipes.forEach(r => {
+      (r.ingredients || []).forEach(ing => {
+        if (ing.qty == null || !ing.name) {
+          loose.push(ing.raw || ing.name || '');
+          return;
+        }
+        const key = normName(ing.name) + '||' + normName(ing.unit);
+        if (!map.has(key)) {
+          map.set(key, { qty: ing.qty, unit: ing.unit, name: ing.name, raws: [ing.raw] });
+        } else {
+          const e = map.get(key);
+          e.qty += ing.qty;
+          e.raws.push(ing.raw);
+        }
+      });
+    });
+    const lines = [];
+    map.forEach(e => {
+      lines.push([formatQty(e.qty), e.unit, e.name].filter(Boolean).join(' '));
+    });
+    [...new Set(loose.filter(Boolean))].forEach(l => lines.push(l));
+    return lines.sort((a, b) => a.localeCompare(b));
+  }
+
+  function parseStepsText(text) {
+    return String(text || '').split(/\n+/).map(s => s.trim()).filter(Boolean);
+  }
+  function stepsToText(steps) {
+    return (steps || []).join('\n');
+  }
+
+  function stepHasInlineQty(step, ing) {
+    const s = String(step || '');
+    const name = normName(ing.name || ing.raw);
+    if (!name) return false;
+    // If step already has a number near the ingredient name, treat as inline qty
+    const tokens = name.split(' ').filter(w => w.length > 2);
+    const needle = tokens.length ? tokens[tokens.length - 1] : name;
+    const re = new RegExp('(\\d+[\\d\\s\\/\\.]*\\s*(?:' + UNITS.join('|') + ')?\\s+)[^.]{0,40}' + needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    if (re.test(s)) return true;
+    const re2 = new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[^.]{0,20}\\d', 'i');
+    return re2.test(s);
+  }
+
+  function injectQtyIntoStep(step, ingredients) {
+    let text = esc(String(step || ''));
+    const used = new Set();
+    (ingredients || []).forEach(ing => {
+      const name = ing.name || ing.raw || '';
+      if (!name || ing.qty == null) return;
+      const n = normName(name);
+      if (!n || used.has(n)) return;
+      if (stepHasInlineQty(text, ing)) return;
+      const tokens = n.split(' ').filter(w => w.length > 2);
+      // Prefer longest distinctive token match
+      let matched = false;
+      const candidates = [];
+      if (tokens.length) candidates.push(tokens.join(' '));
+      tokens.slice().reverse().forEach(t => candidates.push(t));
+      for (const cand of candidates) {
+        if (cand.length < 3) continue;
+        const re = new RegExp('\\b(the\\s+)?' + cand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i');
+        if (re.test(text)) {
+          const qtyBits = [formatQty(ing.qty), ing.unit].filter(Boolean).join(' ');
+          if (!qtyBits) break;
+          text = text.replace(re, (m) => '<span class="inj">' + qtyBits + ' ' + m.replace(/^the\s+/i, '') + '</span>');
+          used.add(n);
+          matched = true;
+          break;
+        }
+      }
+      if (!matched) {
+        // fuzzy: any significant word from ingredient name appears
+        for (const t of tokens) {
+          if (t.length < 4) continue;
+          const re = new RegExp('\\b(the\\s+)?' + t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\w*\\b', 'i');
+          if (re.test(text) && !stepHasInlineQty(text, ing)) {
+            const qtyBits = [formatQty(ing.qty), ing.unit].filter(Boolean).join(' ');
+            text = text.replace(re, (m) => '<span class="inj">' + qtyBits + ' ' + m.replace(/^the\s+/i, '') + '</span>');
+            used.add(n);
+            break;
+          }
+        }
+      }
+    });
+    return text;
+  }
+
+  function findSubstitution(ingName) {
+    const n = normName(ingName);
+    if (!n) return null;
+    for (const rule of SUBSTITUTIONS) {
+      for (const k of rule.keys) {
+        const nk = normName(k);
+        if (n === nk || n.includes(nk) || nk.includes(n)) return rule;
+      }
+    }
+    return null;
+  }
+
+  function substitutionForIngredient(recipe, ing) {
+    const key = normName(ing.name || ing.raw);
+    if (recipe.customSubstitutions && recipe.customSubstitutions[key]) {
+      return { text: recipe.customSubstitutions[key], detail: 'Custom substitute', custom: true };
+    }
+    const rule = findSubstitution(ing.name || ing.raw);
+    if (!rule) return { text: 'No built-in suggestion — add your own', detail: '', custom: false };
+    const sug = rule.suggest(ing);
+    let qtyNote = '';
+    if (ing.qty != null && sug.factor != null) {
+      const q = formatQty(ing.qty * sug.factor);
+      qtyNote = q ? ('Try ~' + q + (ing.unit ? ' ' + ing.unit : '') + ' equivalent. ') : '';
+    }
+    return { text: sug.text, detail: qtyNote + (sug.detail || ''), custom: false };
+  }
+
+  function markIngredientMissing(recipeId, ingName, missing) {
+    const r = state.recipes.find(x => x.id === recipeId);
+    if (!r) return;
+    const key = normName(ingName);
+    const set = new Set(r.missingIngredients || []);
+    if (missing) set.add(key); else set.delete(key);
+    r.missingIngredients = [...set];
+    r.updatedAt = new Date().toISOString();
+    save();
+  }
+
+  function setCustomSubstitution(recipeId, ingName, text) {
+    const r = state.recipes.find(x => x.id === recipeId);
+    if (!r) return;
+    const key = normName(ingName);
+    if (!r.customSubstitutions) r.customSubstitutions = {};
+    if (text && text.trim()) r.customSubstitutions[key] = text.trim();
+    else delete r.customSubstitutions[key];
+    r.updatedAt = new Date().toISOString();
+    save();
+  }
+
+  function parseMinutesFromStep(step) {
+    const s = String(step || '').toLowerCase();
+    let mins = null;
+    const hour = s.match(/(\d+(?:\.\d+)?)\s*(?:hours?|hrs?)/);
+    const min = s.match(/(\d+(?:\.\d+)?)\s*(?:minutes?|mins?|min\b)/);
+    if (hour) mins = (mins || 0) + Number(hour[1]) * 60;
+    if (min) mins = (mins || 0) + Number(min[1]);
+    // patterns like "bake 25-30 minutes" — take first number already handled
+    if (mins == null) {
+      const range = s.match(/(\d+)\s*[-–]\s*(\d+)\s*(?:minutes?|mins?|min\b)/);
+      if (range) mins = Number(range[1]);
+    }
+    return mins != null && mins > 0 ? Math.round(mins) : null;
+  }
+
+  function formatTimer(sec) {
+    sec = Math.max(0, Math.floor(sec));
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+  }
+
+  function beepAndVibrate() {
+    try {
+      if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 400]);
+    } catch (e) {}
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      const ctx = new Ctx();
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = 'sine';
+      o.frequency.value = 880;
+      g.gain.value = 0.0001;
+      o.connect(g); g.connect(ctx.destination);
+      const now = ctx.currentTime;
+      g.gain.exponentialRampToValueAtTime(0.2, now + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + 0.45);
+      o.start(now); o.stop(now + 0.5);
+      setTimeout(() => {
+        const o2 = ctx.createOscillator();
+        const g2 = ctx.createGain();
+        o2.frequency.value = 660;
+        o2.connect(g2); g2.connect(ctx.destination);
+        const t = ctx.currentTime;
+        g2.gain.value = 0.0001;
+        g2.gain.exponentialRampToValueAtTime(0.2, t + 0.02);
+        g2.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+        o2.start(t); o2.stop(t + 0.55);
+        setTimeout(() => ctx.close(), 800);
+      }, 350);
+    } catch (e) {}
+  }
+
+  function ensureTimerTick() {
+    if (ui.timerTick) return;
+    ui.timerTick = setInterval(() => {
+      let changed = false;
+      ui.timers.forEach(t => {
+        if (t.paused || t.done) return;
+        t.remaining = Math.max(0, t.remaining - 1);
+        changed = true;
+        if (t.remaining <= 0 && !t.done) {
+          t.done = true;
+          t.paused = true;
+          beepAndVibrate();
+          toast('Timer done: ' + (t.label || 'Timer'));
+        }
+      });
+      if (changed) renderTimers();
+      if (!ui.timers.some(t => !t.done && !t.paused) && ui.timers.every(t => t.done || t.paused)) {
+        // keep ticking while cook mode open with active timers only
+      }
+      if (!ui.timers.length) {
+        clearInterval(ui.timerTick);
+        ui.timerTick = null;
+      }
+    }, 1000);
+  }
+
+  function addTimer(seconds, label) {
+    const sec = Math.max(1, Math.round(Number(seconds) || 0));
+    ui.timers.push({
+      id: uid(),
+      label: label || 'Timer',
+      remaining: sec,
+      total: sec,
+      paused: false,
+      done: false
+    });
+    ensureTimerTick();
+    renderTimers();
+  }
+
+  function renderTimers() {
+    const box = $('#timerList');
+    if (!box) return;
+    if (!ui.timers.length) {
+      box.innerHTML = '<div class="form-hint">No active timers</div>';
+      return;
+    }
+    box.innerHTML = ui.timers.map(t => `
+      <div class="timer-row">
+        <div class="timer-chip${t.done ? ' done' : ''}">
+          <span class="tlabel">${esc(t.label)}</span>
+          <span class="tval">${esc(formatTimer(t.remaining))}</span>
+          <button type="button" data-tpause="${esc(t.id)}" aria-label="Pause">${t.paused && !t.done ? '▶' : '⏸'}</button>
+          <button type="button" data-tclear="${esc(t.id)}" aria-label="Clear">×</button>
+        </div>
+      </div>`).join('');
+  }
+
+  function cuisineLabel(id) {
+    const f = CUISINE_OPTS.find(x => x.id === id);
+    return f ? f.label : (id || '');
+  }
+  function occasionLabel(id) {
+    const f = OCCASION_OPTS.find(x => x.id === id);
+    return f ? f.label : (id || '');
+  }
+  function difficultyLabel(id) {
+    const f = DIFFICULTY_OPTS.find(x => x.id === id);
+    return f ? f.label : (id || '');
+  }
+
+  function activeRecipes() {
+    return state.recipes.filter(r => !r.archived);
+  }
+  function archivedRecipes() {
+    return state.recipes.filter(r => r.archived);
+  }
+
+  function archiveRecipeById(id) {
+    if (!confirm('Move this recipe to archive?')) return false;
+    const r = state.recipes.find(x => x.id === id);
+    if (!r) return false;
+    r.archived = true;
+    r.updatedAt = new Date().toISOString();
+    Object.keys(state.mealPlan).forEach(k => {
+      state.mealPlan[k] = (state.mealPlan[k] || []).filter(x => x !== id);
+      if (!state.mealPlan[k].length) delete state.mealPlan[k];
+    });
+    save(); closeSheet(); renderAll(); toast('Archived');
+    return true;
+  }
+
+  function restoreRecipeById(id) {
+    const r = state.recipes.find(x => x.id === id);
+    if (!r) return;
+    r.archived = false;
+    r.updatedAt = new Date().toISOString();
+    save(); renderAll(); toast('Restored');
+  }
+
+  function permanentlyDeleteRecipe(id) {
+    if (!confirm('Permanently delete this archived recipe? This cannot be undone.')) return false;
+    state.recipes = state.recipes.filter(x => x.id !== id);
+    Object.keys(state.mealPlan).forEach(k => {
+      state.mealPlan[k] = (state.mealPlan[k] || []).filter(x => x !== id);
+      if (!state.mealPlan[k].length) delete state.mealPlan[k];
+    });
+    save(); closeSheet(); renderAll(); toast('Permanently deleted');
+    return true;
+  }
+
+  function autoDeductPantryForRecipe(recipe) {
+    const deducted = [];
+    (recipe.ingredients || []).forEach(ing => {
+      const pantry = state.pantry.find(p => namesOverlap(p.name, ing.name || ing.raw));
+      if (!pantry || !(pantry.qty > 0)) return;
+      let amt = 1;
+      if (ing.qty != null && Number.isFinite(Number(ing.qty)) && Number(ing.qty) > 0) {
+        // If pantry is portion-based and ingredient has a large qty, still deduct 1 portion by default
+        // unless units suggest countable pieces
+        const unit = (ing.unit || '').toLowerCase();
+        if (['', 'piece', 'pieces', 'whole', 'clove', 'cloves', 'slice', 'slices', 'can', 'cans'].includes(unit) && ing.qty <= 20) {
+          amt = Number(ing.qty);
+        } else {
+          amt = 1;
+        }
+      }
+      const before = Number(pantry.qty) || 0;
+      pantry.qty = Math.max(0, before - amt);
+      deducted.push({ id: pantry.id, name: pantry.name, amt, before, after: pantry.qty });
+    });
+    if (deducted.length) save();
+    return deducted;
+  }
+
+  function mergeIngredientsFiltered(recipes, excludePantry) {
+    const lines = mergeIngredients(recipes);
+    if (!excludePantry) return { lines, excluded: [] };
+    const kept = [];
+    const excluded = [];
+    lines.forEach(line => {
+      const parsed = parseIngredientLine(line);
+      const hit = state.pantry.find(p => p.qty > 0 && namesOverlap(p.name, parsed.name || line));
+      if (hit) excluded.push(line);
+      else kept.push(line);
+    });
+    return { lines: kept, excluded };
+  }
+
+  function shouldShowBackupBanner() {
+    if (ui.backupDismissed) return false;
+    if (!state.lastExportAt) return state.recipes.length > 0;
+    const last = Date.parse(state.lastExportAt);
+    if (!Number.isFinite(last)) return true;
+    return (Date.now() - last) >= 30 * 24 * 60 * 60 * 1000;
+  }
+
+  function updateBackupBanner() {
+    const el = $('#backupBanner');
+    if (!el) return;
+    el.classList.toggle('hidden', !shouldShowBackupBanner() || ui.tab !== 'recipes' || ui.showArchive);
+  }
+
+  function openCookingMode(id) {
+    const r = state.recipes.find(x => x.id === id);
+    if (!r) return;
+    const steps = (r.steps && r.steps.length) ? r.steps.slice() : [];
+    if (!steps.length) {
+      toast('Add cooking steps (one per line) in Edit first');
+      openEdit(id);
+      return;
+    }
+    closeSheet();
+    ui.cook = { recipeId: id, steps, index: 0 };
+    $('#cookMode').classList.remove('hidden');
+    $('#cookTitle').textContent = r.name;
+    paintCookStep();
+    renderTimers();
+  }
+
+  function paintCookStep() {
+    const r = state.recipes.find(x => x.id === ui.cook.recipeId);
+    if (!r) return;
+    const steps = ui.cook.steps;
+    const i = ui.cook.index;
+    const raw = steps[i] || '';
+    const injected = injectQtyIntoStep(raw, r.ingredients || []);
+    $('#cookStep').innerHTML = injected;
+    $('#cookProgress').textContent = (i + 1) + ' / ' + steps.length;
+    $('#cookPrev').disabled = i <= 0;
+    $('#cookNext').textContent = i >= steps.length - 1 ? 'Done' : 'Next →';
+    // substitutions panel for missing ingredients
+    const miss = (r.ingredients || []).filter(ing => (r.missingIngredients || []).includes(normName(ing.name || ing.raw)));
+    const box = $('#cookSubst');
+    if (!miss.length) {
+      box.innerHTML = '';
+    } else {
+      box.innerHTML = '<div class="timer-bar-title">Substitutions</div>' + miss.map(ing => {
+        const sug = substitutionForIngredient(r, ing);
+        return `<div class="subst-card">
+          <div class="miss-label">Missing: ${esc(ing.raw || ing.name)}</div>
+          <div class="sug">→ ${esc(sug.text)}</div>
+          ${sug.detail ? `<div class="form-hint">${esc(sug.detail)}</div>` : ''}
+        </div>`;
+      }).join('');
+    }
+  }
+
+  function closeCookingMode() {
+    $('#cookMode').classList.add('hidden');
+    ui.cook = { recipeId: null, steps: [], index: 0 };
+  }
+
+  function filteredRecipes() {
+    const q = ui.search.trim().toLowerCase();
+    let list = (ui.showArchive ? archivedRecipes() : activeRecipes()).slice();
+    if (q) {
+      list = list.filter(r => {
+        const blob = [
+          r.name, r.notes, r.category, r.url, r.modifications, r.ratingNote,
+          r.cuisine, r.occasion, r.difficulty,
+          ...(r.ingredients || []).map(i => i.raw || i.name),
+          ...(r.steps || [])
+        ].join(' ').toLowerCase();
+        return blob.includes(q);
+      });
+    }
+    if (ui.protein.size) {
+      list = list.filter(r => {
+        const p = r.protein || 'other';
+        return ui.protein.has(p) || (ui.protein.has('other') && !r.protein);
+      });
+    }
+    if (ui.cuisine.size) {
+      list = list.filter(r => {
+        const c = r.cuisine || 'other';
+        return ui.cuisine.has(c) || (ui.cuisine.has('other') && !r.cuisine);
+      });
+    }
+    if (ui.occasion.size) {
+      list = list.filter(r => {
+        const o = r.occasion || 'other';
+        return ui.occasion.has(o) || (ui.occasion.has('other') && !r.occasion);
+      });
+    }
+    if (ui.difficulty.size) {
+      list = list.filter(r => r.difficulty && ui.difficulty.has(r.difficulty));
+    }
+    if (ui.cook.size) {
+      list = list.filter(r => {
+        for (const id of ui.cook) {
+          const opt = COOK_OPTS.find(o => o.id === id);
+          if (opt && opt.test(r.cookMinutes)) return true;
+        }
+        return false;
+      });
+    }
+    if (ui.cost.size) {
+      list = list.filter(r => r.cost != null && ui.cost.has(String(r.cost)));
+    }
+    const matchCache = new Map();
+    const getMatch = (r) => {
+      if (!matchCache.has(r.id)) matchCache.set(r.id, recipePantryMatch(r));
+      return matchCache.get(r.id);
+    };
+    // Sort only reorders — never filters/hides recipes
+    switch (ui.sort) {
+      case 'rated':
+        list.sort((a, b) => {
+          const ar = a.rating == null ? -1 : Number(a.rating);
+          const br = b.rating == null ? -1 : Number(b.rating);
+          if (ar < 0 && br < 0) return (b.createdAt || '').localeCompare(a.createdAt || '');
+          if (ar < 0) return 1;
+          if (br < 0) return -1;
+          return br - ar || (b.createdAt || '').localeCompare(a.createdAt || '');
+        });
+        break;
+      case 'cook':
+      case 'quick':
+        list.sort((a, b) => {
+          const am = a.cookMinutes == null ? Infinity : a.cookMinutes;
+          const bm = b.cookMinutes == null ? Infinity : b.cookMinutes;
+          if (am === bm) return a.name.localeCompare(b.name);
+          return am - bm;
+        });
+        break;
+      case 'az':
+        list.sort((a, b) => a.name.localeCompare(b.name));
+        break;
+      case 'difficulty':
+        list.sort((a, b) => {
+          const ad = DIFFICULTY_RANK[a.difficulty] || 99;
+          const bd = DIFFICULTY_RANK[b.difficulty] || 99;
+          if (ad !== bd) return ad - bd;
+          return a.name.localeCompare(b.name);
+        });
+        break;
+      case 'pantry':
+        list.sort((a, b) => getMatch(b).pct - getMatch(a).pct || a.name.localeCompare(b.name));
+        break;
+      case 'date':
+      case 'recent':
+      default:
+        list.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '') || a.name.localeCompare(b.name));
+    }
+    return list;
+  }
+
+  function renderHeaderActions() {
+    const archCount = archivedRecipes().length;
+    const map = {
+      recipes: `<button class="btn btn-primary btn-sm" type="button" id="addRecipeBtn">+ Add</button>
+        <button class="btn btn-secondary btn-sm" type="button" id="exportBtn">Export</button>
+        <button class="btn btn-secondary btn-sm" type="button" id="importBtn">Import</button>
+        <button class="btn btn-ghost btn-sm" type="button" id="pricesBtn">Prices</button>
+        <button class="btn btn-secondary btn-sm" type="button" id="archiveViewBtn">${ui.showArchive ? 'Active' : 'Archive'}${archCount && !ui.showArchive ? ' (' + archCount + ')' : ''}</button>`,
+      plan: `<button class="btn btn-secondary btn-sm" type="button" id="weekTodayBtn">This week</button>`,
+      shopping: ``,
+      pantry: `<button class="btn btn-ghost btn-sm" type="button" id="pricesBtn">Prices</button>`
+    };
+    $('#headerActions').innerHTML = map[ui.tab] || '';
+  }
+
+  function renderFilterChips() {
+    const box = (el, opts, set) => {
+      if (!el) return;
+      el.innerHTML = opts.map(o =>
+        `<button type="button" class="chip${set.has(o.id) ? ' active' : ''}" data-id="${esc(o.id)}">${esc(o.label)}</button>`
+      ).join('');
+    };
+    box($('#filterProtein'), PROTEIN_OPTS, ui.protein);
+    box($('#filterCuisine'), CUISINE_OPTS, ui.cuisine);
+    box($('#filterOccasion'), OCCASION_OPTS, ui.occasion);
+    box($('#filterDifficulty'), DIFFICULTY_OPTS, ui.difficulty);
+    box($('#filterCook'), COOK_OPTS, ui.cook);
+    box($('#filterCost'), COST_OPTS, ui.cost);
+  }
+
+  function cardHtml(r) {
+    const plat = r.platform || 'web';
+    const thumb = r.photo
+      ? `<img class="card-thumb" src="${esc(r.photo)}" alt="">`
+      : `<div class="card-thumb placeholder">🍽</div>`;
+    const delLabel = ui.showArchive ? 'Delete' : 'Archive';
+    const badges = [
+      `<span class="badge ${esc(plat)}">${esc(plat)}</span>`,
+      r.rating != null ? `<span class="badge rating">★ ${esc(r.rating)}/10</span>` : '',
+      r.difficulty ? `<span class="badge difficulty-${esc(r.difficulty)}">${esc(difficultyLabel(r.difficulty))}</span>` : '',
+      (() => { const ps = recipeCostPerServing(r); return ps != null ? `<span class="badge cost">${esc(formatMoney(ps))}/serving</span>` : ''; })(),
+      r.cost ? `<span class="badge cost">${esc(costLabel(r.cost))}</span>` : '',
+      r.protein ? `<span class="badge">${esc(proteinLabel(r.protein))}</span>` : '',
+      r.cuisine ? `<span class="badge cuisine">${esc(cuisineLabel(r.cuisine))}</span>` : '',
+      r.occasion ? `<span class="badge occasion">${esc(occasionLabel(r.occasion))}</span>` : '',
+      r.cookMinutes != null ? `<span class="badge">${esc(r.cookMinutes)} min</span>` : '',
+      r.category ? `<span class="badge">${esc(r.category)}</span>` : '',
+      r.made ? `<span class="badge">Made</span>` : '',
+      r.archived ? `<span class="badge archived">Archived</span>` : ''
+    ].filter(Boolean).join('');
+    const mods = r.modifications ? `<div class="card-mods">${esc(r.modifications)}</div>` : '';
+    return `<div class="swipe-item" data-id="${esc(r.id)}">
+      <div class="swipe-actions" aria-hidden="true">
+        <button type="button" class="swipe-del" data-swipe-del="${esc(r.id)}">${delLabel}</button>
+        <button type="button" class="swipe-del" data-swipe-del="${esc(r.id)}">${delLabel}</button>
+      </div>
+      <div class="swipe-front">
+        <article class="card" data-id="${esc(r.id)}">
+          ${thumb}
+          <div class="card-body" data-open-url="${esc(r.id)}">
+            <div class="card-title">${esc(r.name)}</div>
+            <div class="card-meta">${badges}</div>
+            <div class="card-url">${esc(domainOf(r.url))}</div>
+            ${mods}
+          </div>
+          <div class="card-actions">
+            <button type="button" class="btn-icon menu-btn" data-menu="${esc(r.id)}" aria-label="Menu">⋯</button>
+          </div>
+        </article>
+      </div>
+    </div>`;
+  }
+
+  function renderRecipes() {
+    renderFilterChips();
+    const ab = $('#archiveBanner');
+    if (ab) ab.classList.toggle('hidden', !ui.showArchive);
+    updateBackupBanner();
+    if (ui.sort === 'recent') ui.sort = 'date';
+    if (ui.sort === 'quick') ui.sort = 'cook';
+    if (![...$('#sortSelect').options].some(o => o.value === ui.sort)) ui.sort = 'date';
+    $('#sortSelect').value = ui.sort;
+    const list = filteredRecipes();
+    const box = $('#recipeCards');
+    if (!list.length) {
+      box.innerHTML = ui.showArchive
+        ? `<div class="empty"><strong>Archive empty</strong>Swipe-delete moves recipes here.</div>`
+        : `<div class="empty"><strong>No recipes yet</strong>Tap + Add to save your first dish link.</div>`;
+      return;
+    }
+    box.innerHTML = list.map(cardHtml).join('');
+  }
+
+  function renderPlan() {
+    const days = weekDates(ui.weekOffset);
+    const start = days[0], end = days[6];
+    const fmt = d => d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    $('#weekLabel').textContent = fmt(start) + ' – ' + fmt(end);
+    const names = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+    $('#weekDays').innerHTML = days.map((d, i) => {
+      const key = ymd(d);
+      const ids = state.mealPlan[key] || [];
+      const items = ids.map(id => {
+        const r = state.recipes.find(x => x.id === id);
+        if (!r) return '';
+        return `<div class="day-recipe"><span style="flex:1">${esc(r.name)}</span>
+          <button type="button" class="rm" data-unplan="${esc(key)}" data-rid="${esc(id)}" aria-label="Remove">×</button></div>`;
+      }).join('') || `<div class="day-empty">Nothing planned</div>`;
+      return `<div class="day-card">
+        <div class="day-head">
+          <div><strong>${names[i]}</strong> <span class="date">${esc(fmt(d))}</span></div>
+          <button type="button" class="btn btn-secondary btn-sm" data-plan-add="${esc(key)}">+</button>
+        </div>
+        ${items}
+      </div>`;
+    }).join('');
+  }
+
+  function renderShopping() {
+    const box = $('#shopSelectList');
+    const toggle = $('#excludePantryToggle');
+    if (toggle) toggle.checked = !!ui.excludePantry;
+    const recipes = activeRecipes();
+    if (!recipes.length) {
+      box.innerHTML = `<div class="empty"><strong>No recipes</strong>Add recipes first.</div>`;
+      return;
+    }
+    const sorted = recipes.slice().sort((a, b) => a.name.localeCompare(b.name));
+    box.innerHTML = sorted.map(r => `
+      <div class="select-card">
+        <input type="checkbox" id="shop_${esc(r.id)}" data-shop-id="${esc(r.id)}" ${ui.shopSelected.has(r.id) ? 'checked' : ''}>
+        <label for="shop_${esc(r.id)}">${esc(r.name)}</label>
+      </div>`).join('');
+  }
+
+  function renderShoppingResult(lines, excluded) {
+    excluded = excluded || [];
+    const el = $('#shoppingResult');
+    if (!lines.length && !excluded.length) {
+      el.classList.remove('hidden');
+      el.innerHTML = `<div class="merged-list"><p class="form-hint">No ingredients found on selected recipes. Add ingredient lists first.</p></div>`;
+      return;
+    }
+    el.classList.remove('hidden');
+    el.innerHTML = `
+      <div class="merged-list">
+        <div class="form-actions" style="margin:0 0 10px">
+          <button class="btn btn-primary btn-sm" type="button" id="copyShopBtn">Copy List</button>
+          <button class="btn btn-secondary btn-sm" type="button" id="shareShopBtn">Share</button>
+        </div>
+        ${lines.length ? `<ul>${lines.map(l => `<li>${esc(l)}</li>`).join('')}</ul>` : '<p class="form-hint">Everything is already in your pantry.</p>'}
+        ${excluded.length ? `<div class="section-title">Excluded (in pantry)</div><ul>${excluded.map(l => `<li class="excluded">${esc(l)}</li>`).join('')}</ul>` : ''}
+      </div>`;
+    el.dataset.lines = JSON.stringify(lines);
+  }
+
+  function renderPantry() {
+    const list = state.pantry.slice().sort((a, b) => {
+      if (a.qty !== b.qty) return a.qty - b.qty;
+      return a.name.localeCompare(b.name);
+    });
+    const box = $('#pantryList');
+    if (!list.length) {
+      box.innerHTML = `<div class="empty"><strong>Pantry empty</strong>Add freezer/cabinet portions above.</div>`;
+    } else {
+      box.innerHTML = list.map(p => `
+        <div class="pantry-item${p.qty <= 0 ? ' low' : ''}">
+          <div class="pantry-name">${esc(p.name)}${p.qty <= 0 ? ' <span class="badge">Out</span>' : ''}</div>
+          <div class="pantry-qty">
+            <button type="button" data-pq="${esc(p.id)}" data-d="-1">−</button>
+            <span>${esc(p.qty)}</span>
+            <button type="button" data-pq="${esc(p.id)}" data-d="1">+</button>
+          </div>
+          <button type="button" class="btn-icon" data-pdel="${esc(p.id)}" aria-label="Remove" style="width:36px;height:36px">🗑</button>
+        </div>`).join('');
+    }
+
+    const matches = activeRecipes()
+      .map(r => ({ r, m: recipePantryMatch(r) }))
+      .filter(x => (x.r.ingredients || []).length)
+      .sort((a, b) => b.m.pct - a.m.pct);
+    const mb = $('#pantryMatches');
+    if (!matches.length) {
+      mb.innerHTML = `<div class="empty"><strong>No ingredient data</strong>Add ingredients to recipes to see matches.</div>`;
+      return;
+    }
+    mb.innerHTML = matches.slice(0, 30).map(({ r, m }) => `
+      <div class="match-card">
+        <div class="match-head">
+          <strong>${esc(r.name)}</strong>
+          <span class="match-pct">${esc(m.pct)}%</span>
+        </div>
+        <div class="match-missing">
+          ${m.missing.length
+            ? 'Missing: ' + m.missing.map(i => `<span class="miss">${esc(i.name || i.raw)}</span>`).join(', ')
+            : '<span style="color:var(--ok)">You have everything!</span>'}
+        </div>
+      </div>`).join('');
+  }
+
+  function renderAll() {
+    renderHeaderActions();
+    if (ui.tab === 'recipes') renderRecipes();
+    if (ui.tab === 'plan') renderPlan();
+    if (ui.tab === 'shopping') renderShopping();
+    if (ui.tab === 'pantry') renderPantry();
+    updateBackupBanner();
+  }
+
+  function setTab(tab) {
+    ui.tab = tab;
+    $$('.tabs-panel').forEach(p => p.classList.toggle('active', p.dataset.tab === tab));
+    $$('.nav-btn').forEach(b => b.classList.toggle('active', b.dataset.nav === tab));
+    renderAll();
+  }
+
+  function recipeFormHtml(r) {
+    r = r || {};
+    const ings = ingredientsToText(r.ingredients || []);
+    const stepsTxt = stepsToText(r.steps || []);
+    const proteinChips = PROTEIN_OPTS.map(o =>
+      `<button type="button" class="chip protein-pick${(r.protein || '') === o.id ? ' active' : ''}" data-protein="${esc(o.id)}">${esc(o.label)}</button>`
+    ).join('');
+    const costChips = COST_OPTS.map(o =>
+      `<button type="button" class="chip cost-pick${String(r.cost || '') === o.id ? ' active' : ''}" data-cost="${esc(o.id)}">${esc(o.label)}</button>`
+    ).join('');
+    const cuisineChips = CUISINE_OPTS.map(o =>
+      `<button type="button" class="chip cuisine-pick${(r.cuisine || '') === o.id ? ' active' : ''}" data-cuisine="${esc(o.id)}">${esc(o.label)}</button>`
+    ).join('');
+    const occasionChips = OCCASION_OPTS.map(o =>
+      `<button type="button" class="chip occasion-pick${(r.occasion || '') === o.id ? ' active' : ''}" data-occasion="${esc(o.id)}">${esc(o.label)}</button>`
+    ).join('');
+    const diffChips = DIFFICULTY_OPTS.map(o =>
+      `<button type="button" class="chip difficulty-pick${(r.difficulty || '') === o.id ? ' active' : ''}" data-difficulty="${esc(o.id)}">${esc(o.label)}</button>`
+    ).join('');
+    const speechOk = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+    return `
+      <h2>${r.id ? 'Edit recipe' : 'Add recipe'}</h2>
+      <div class="form-group"><label for="fName">Dish name *</label>
+        <input id="fName" required value="${esc(r.name || '')}" placeholder="Loaded Baked Potato Soup"></div>
+      <div class="form-group"><label for="fUrl">Source URL *</label>
+        <input id="fUrl" type="url" required value="${esc(r.url || '')}" placeholder="https://…" inputmode="url"></div>
+      <div class="form-group"><label for="fCategory">Tag / category</label>
+        <input id="fCategory" value="${esc(r.category || '')}" placeholder="soup, weeknight…"></div>
+      <div class="form-row">
+        <div class="form-group"><label for="fCook">Cook time (min)</label>
+          <input id="fCook" type="number" inputmode="numeric" min="0" value="${r.cookMinutes != null ? esc(r.cookMinutes) : ''}"></div>
+        <div class="form-group"><label for="fServings">Servings (original)</label>
+          <input id="fServings" type="number" inputmode="decimal" min="0" step="0.5" value="${r.servingsDefault != null ? esc(r.servingsDefault) : ''}"></div>
+      </div>
+      <div class="form-group"><label>Protein</label>
+        <div class="protein-chips">${proteinChips}
+          <button type="button" class="chip protein-pick${!r.protein ? ' active' : ''}" data-protein="">Clear</button>
+        </div>
+        <input type="hidden" id="fProtein" value="${esc(r.protein || '')}"></div>
+      <div class="form-group"><label>Cost</label>
+        <div class="cost-chips">${costChips}
+          <button type="button" class="chip cost-pick${!r.cost ? ' active' : ''}" data-cost="">Clear</button>
+        </div>
+        <input type="hidden" id="fCost" value="${r.cost != null ? esc(r.cost) : ''}"></div>
+      <div class="form-group"><label>Cuisine</label>
+        <div class="protein-chips">${cuisineChips}
+          <button type="button" class="chip cuisine-pick${!r.cuisine ? ' active' : ''}" data-cuisine="">Clear</button>
+        </div>
+        <input type="hidden" id="fCuisine" value="${esc(r.cuisine || '')}"></div>
+      <div class="form-group"><label>Occasion</label>
+        <div class="protein-chips">${occasionChips}
+          <button type="button" class="chip occasion-pick${!r.occasion ? ' active' : ''}" data-occasion="">Clear</button>
+        </div>
+        <input type="hidden" id="fOccasion" value="${esc(r.occasion || '')}"></div>
+      <div class="form-group"><label>Difficulty</label>
+        <div class="protein-chips">${diffChips}
+          <button type="button" class="chip difficulty-pick${!r.difficulty ? ' active' : ''}" data-difficulty="">Clear</button>
+        </div>
+        <input type="hidden" id="fDifficulty" value="${esc(r.difficulty || '')}"></div>
+      <div class="form-group"><label for="fNotes">Notes</label>
+        <textarea id="fNotes" placeholder="Optional notes">${esc(r.notes || '')}</textarea></div>
+      <div class="form-group"><label for="fIngredients">Ingredients (one per line)</label>
+        <textarea id="fIngredients" placeholder="2 cups milk">${esc(ings)}</textarea>
+        <div class="form-hint">Paste manually if extract fails (Safari often blocks cross-site fetch).</div>
+        <button class="btn btn-secondary btn-sm" type="button" id="extractBtn" style="margin-top:8px">Extract from URL</button>
+      </div>
+      <div class="form-group"><label for="fSteps">Cooking steps (one per line)</label>
+        <textarea id="fSteps" placeholder="Preheat oven to 350°F&#10;Add the flour and stir">${esc(stepsTxt)}</textarea>
+        <div class="form-hint">Used by Cooking Mode. Quantities auto-inject from the ingredient list when missing inline.</div>
+      </div>
+      <div class="form-group"><label for="fMods">My changes / modifications</label>
+        <div class="mic-row">
+          <textarea id="fMods" placeholder="e.g. used Meat Church Holy Cow…">${esc(r.modifications || '')}</textarea>
+          <button type="button" class="btn-icon mic-btn" id="micBtn" title="Dictate" aria-label="Dictate modifications">${speechOk ? '🎤' : '⌨️'}</button>
+        </div>
+        <div class="form-hint">${speechOk ? 'Tap mic to dictate (Web Speech API). Tap again to stop.' : 'Voice not available — type your changes.'}</div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-secondary" type="button" id="cancelSheet">Cancel</button>
+        <button class="btn btn-primary" type="button" id="saveRecipeBtn">Save</button>
+      </div>`;
+  }
+
+  function openAdd() {
+    ui.sheetMode = 'form';
+    ui.editId = null;
+    openSheet(recipeFormHtml(null));
+  }
+  function openEdit(id) {
+    const r = state.recipes.find(x => x.id === id);
+    if (!r) return;
+    ui.sheetMode = 'form';
+    ui.editId = id;
+    openSheet(recipeFormHtml(r));
+  }
+
+  function readFormRecipe() {
+    const name = ($('#fName') || {}).value.trim();
+    const url = ($('#fUrl') || {}).value.trim();
+    if (!name || !url) { toast('Name and URL are required'); return null; }
+    const cookRaw = ($('#fCook') || {}).value;
+    const servRaw = ($('#fServings') || {}).value;
+    const costRaw = ($('#fCost') || {}).value;
+    const protein = ($('#fProtein') || {}).value || '';
+    const cuisine = ($('#fCuisine') || {}).value || '';
+    const occasion = ($('#fOccasion') || {}).value || '';
+    const difficulty = ($('#fDifficulty') || {}).value || '';
+    return {
+      name, url,
+      platform: detectPlatform(url),
+      category: ($('#fCategory') || {}).value.trim(),
+      notes: ($('#fNotes') || {}).value.trim(),
+      ingredients: parseIngredientsText(($('#fIngredients') || {}).value),
+      steps: parseStepsText(($('#fSteps') || {}).value),
+      servingsDefault: servRaw === '' ? null : Number(servRaw),
+      modifications: ($('#fMods') || {}).value.trim(),
+      protein, cuisine, occasion, difficulty,
+      cookMinutes: cookRaw === '' ? null : Number(cookRaw),
+      cost: costRaw === '' ? null : Number(costRaw)
+    };
+  }
+
+  function saveFromForm() {
+    const data = readFormRecipe();
+    if (!data) return;
+    const now = new Date().toISOString();
+    if (ui.editId) {
+      const i = state.recipes.findIndex(x => x.id === ui.editId);
+      if (i >= 0) {
+        state.recipes[i] = normalizeRecipe({
+          ...state.recipes[i],
+          ...data,
+          updatedAt: now
+        });
+      }
+      toast('Recipe updated');
+    } else {
+      state.recipes.unshift(normalizeRecipe({ ...data, createdAt: now, updatedAt: now }));
+      toast('Recipe saved');
+    }
+    save();
+    closeSheet();
+    renderAll();
+  }
+
+  function openMenu(id) {
+    const r = state.recipes.find(x => x.id === id);
+    if (!r) return;
+    ui.sheetMode = 'menu';
+    ui.editId = id;
+    const archiveActs = r.archived
+      ? `<button type="button" class="action-item" data-act="restore">Restore from archive</button>
+         <button type="button" class="action-item danger" data-act="purge">Delete permanently</button>`
+      : `<button type="button" class="action-item danger" data-act="delete">Archive</button>`;
+    openSheet(`
+      <h2>${esc(r.name)}</h2>
+      <div class="action-list">
+        <button type="button" class="action-item" data-act="open">Open link</button>
+        <button type="button" class="action-item" data-act="detail">View details / scale</button>
+        <button type="button" class="action-item" data-act="cook">Cooking mode</button>
+        <button type="button" class="action-item" data-act="edit">Edit</button>
+        <button type="button" class="action-item" data-act="mods">My changes</button>
+        <button type="button" class="action-item" data-act="rate">Mark as made / rate</button>
+        <button type="button" class="action-item" data-act="cost">${r.recipeCost != null ? 'Edit cost' : 'Add cost'}</button>
+        ${archiveActs}
+        <button type="button" class="action-item" data-act="cancel">Cancel</button>
+      </div>`);
+  }
+
+  function openDetail(id) {
+    const r = state.recipes.find(x => x.id === id);
+    if (!r) return;
+    ui.sheetMode = 'detail';
+    ui.editId = id;
+    const base = r.servingsDefault != null && r.servingsDefault > 0 ? r.servingsDefault : 4;
+    ui.detailScale = base;
+    paintDetail(r, base);
+  }
+
+  function paintDetail(r, scaleServings) {
+    const base = r.servingsDefault != null && r.servingsDefault > 0 ? r.servingsDefault : 4;
+    const factor = scaleServings / base;
+    const ings = (r.ingredients || []);
+    const photo = r.photo ? `<img class="detail-photo" src="${esc(r.photo)}" alt="Finished dish">` : '';
+    const missingSet = new Set(r.missingIngredients || []);
+    openSheet(`
+      <h2>${esc(r.name)}</h2>
+      ${photo}
+      <div class="card-meta" style="margin-bottom:10px">
+        <span class="badge ${esc(r.platform || 'web')}">${esc(r.platform || 'web')}</span>
+        ${r.rating != null ? `<span class="badge rating">★ ${esc(r.rating)}/10</span>` : ''}
+        ${r.difficulty ? `<span class="badge difficulty-${esc(r.difficulty)}">${esc(difficultyLabel(r.difficulty))}</span>` : ''}
+        ${r.cost ? `<span class="badge cost">${esc(costLabel(r.cost))}</span>` : ''}
+        ${r.cuisine ? `<span class="badge cuisine">${esc(cuisineLabel(r.cuisine))}</span>` : ''}
+        ${r.occasion ? `<span class="badge occasion">${esc(occasionLabel(r.occasion))}</span>` : ''}
+        ${r.cookMinutes != null ? `<span class="badge">${esc(r.cookMinutes)} min</span>` : ''}
+      </div>
+      <p class="form-hint"><a href="${esc(r.url)}" target="_blank" rel="noopener">Open original ↗</a></p>
+      <div class="form-actions" style="margin:8px 0 4px">
+        <button class="btn btn-primary btn-sm" type="button" id="startCookBtn">Cooking mode</button>
+        <button class="btn btn-ghost btn-sm" type="button" id="detailCostBtn">${(() => { const ps = recipeCostPerServing(r); const src = recipeCostSource(r); if (src === 'manual') return esc(formatMoney(ps)) + '/serving · edit'; if (src === 'estimate') return '~' + esc(formatMoney(ps)) + '/serving · prices'; return 'Add cost'; })()}</button>
+        <button class="btn btn-ghost btn-sm" type="button" id="detailPricesBtn">Staple prices</button>
+      </div>
+      ${r.recipeCost != null ? `<p class="form-hint">Manual total ${esc(formatMoney(r.recipeCost))}</p>` : (estimateRecipeCost(r) ? `<p class="form-hint">Estimate from staple prices (~${esc(formatMoney(estimateRecipeCost(r).total))} total · ${esc(estimateRecipeCost(r).matched)} ingredients matched)</p>` : '')}
+      <div class="section-title">Servings</div>
+      <div class="scale-row">
+        <button type="button" id="scaleMinus" aria-label="Fewer servings">−</button>
+        <div class="val" id="scaleVal">${esc(scaleServings)}</div>
+        <button type="button" id="scalePlus" aria-label="More servings">+</button>
+      </div>
+      <p class="form-hint">Original: ${esc(r.servingsDefault != null ? r.servingsDefault : 'not set (using 4)')}. Scaling is display-only — originals stay saved.</p>
+      <div class="section-title">Ingredients</div>
+      <ul class="ing-list">${ings.length ? ings.map(i => {
+        const key = normName(i.name || i.raw);
+        const isMiss = missingSet.has(key);
+        const q = i.qty != null ? formatQty(i.qty * factor) : '';
+        const sug = isMiss ? substitutionForIngredient(r, i) : null;
+        return `<li class="${isMiss ? 'missing-ing' : ''}">
+          <span class="qty">${esc(q)}</span>${esc(i.unit ? i.unit + ' ' : '')}${esc(i.name || i.raw)}
+          <button type="button" class="sub-btn" data-toggle-miss="${esc(r.id)}" data-ing="${esc(i.name || i.raw)}">${isMiss ? "Have it" : "Don't have"}</button>
+          ${isMiss && sug ? `<div class="form-hint sug">→ ${esc(sug.text)}${sug.detail ? ' — ' + esc(sug.detail) : ''}</div>
+            <div class="custom-row" style="display:flex;gap:6px;margin-top:6px">
+              <input data-custom-sub-ing="${esc(i.name || i.raw)}" placeholder="Custom substitute" value="${esc((r.customSubstitutions || {})[key] || '')}">
+              <button type="button" class="btn btn-secondary btn-sm" data-save-sub="${esc(r.id)}" data-ing="${esc(i.name || i.raw)}">Save</button>
+            </div>` : ''}
+        </li>`;
+      }).join('') : '<li class="form-hint">No ingredients saved</li>'}</ul>
+      ${r.steps && r.steps.length ? `<div class="section-title">Steps (${esc(r.steps.length)})</div><ol class="ing-list">${r.steps.map(s => `<li>${esc(s)}</li>`).join('')}</ol>` : ''}
+      ${r.modifications ? `<div class="section-title">My changes</div><p>${esc(r.modifications)}</p>` : ''}
+      ${r.ratingNote ? `<div class="section-title">Rating note</div><p>${esc(r.ratingNote)}</p>` : ''}
+      ${r.notes ? `<div class="section-title">Notes</div><p>${esc(r.notes)}</p>` : ''}
+      <div class="form-actions">
+        <button class="btn btn-secondary" type="button" id="cancelSheet">Close</button>
+        <button class="btn btn-primary" type="button" data-act-detail-edit>Edit</button>
+      </div>`);
+  }
+
+  function openModsQuick(id) {
+    const r = state.recipes.find(x => x.id === id);
+    if (!r) return;
+    ui.sheetMode = 'mods';
+    ui.editId = id;
+    const speechOk = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+    openSheet(`
+      <h2>My changes</h2>
+      <p class="form-hint" style="margin-bottom:8px">${esc(r.name)}</p>
+      <div class="form-group">
+        <div class="mic-row">
+          <textarea id="fMods" placeholder="What did you change?">${esc(r.modifications || '')}</textarea>
+          <button type="button" class="btn-icon mic-btn" id="micBtn">${speechOk ? '🎤' : '⌨️'}</button>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-secondary" type="button" id="cancelSheet">Cancel</button>
+        <button class="btn btn-primary" type="button" id="saveModsBtn">Save</button>
+      </div>`);
+  }
+
+  function openRate(id) {
+    const r = state.recipes.find(x => x.id === id);
+    if (!r) return;
+    ui.sheetMode = 'rate';
+    ui.editId = id;
+    ui.ratingValue = r.rating;
+    ui.pendingDifficulty = r.difficulty || '';
+    ui.pendingPhoto = r.photo || null;
+    const btns = Array.from({ length: 10 }, (_, i) => i + 1).map(n =>
+      `<button type="button" data-rate="${n}" class="${r.rating === n ? 'active' : ''}">${n}</button>`
+    ).join('');
+    const diffChips = DIFFICULTY_OPTS.map(o =>
+      `<button type="button" class="chip rate-diff${(r.difficulty || '') === o.id ? ' active' : ''}" data-rate-diff="${esc(o.id)}">${esc(o.label)}</button>`
+    ).join('');
+    openSheet(`
+      <h2>Rate: ${esc(r.name)}</h2>
+      <p class="form-hint">How was it? 1–10</p>
+      <div class="rating-grid" id="ratingGrid">${btns}</div>
+      <div class="form-group"><label>Difficulty</label>
+        <div class="protein-chips">${diffChips}</div></div>
+      <div class="form-group"><label for="fRatingNote">Short note</label>
+        <input id="fRatingNote" value="${esc(r.ratingNote || '')}" placeholder="too salty, cut salt next time"></div>
+      <div class="form-group">
+        <label>Photo of finished dish (optional)</label>
+        <div class="form-actions" style="margin:0">
+          <button class="btn btn-secondary btn-sm" type="button" id="takePhotoBtn">Camera / Library</button>
+          <button class="btn btn-ghost btn-sm" type="button" id="clearPhotoBtn">Clear photo</button>
+        </div>
+        <div class="photo-warn">⚠️ Photos use localStorage space. Only one photo per recipe (replaces previous). Images are compressed (~800px JPEG).</div>
+        <div id="photoPreview" style="margin-top:8px">${ui.pendingPhoto ? `<img class="detail-photo" src="${esc(ui.pendingPhoto)}" alt="preview">` : ''}</div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-secondary" type="button" id="cancelSheet">Cancel</button>
+        <button class="btn btn-primary" type="button" id="saveRatingBtn">Save rating</button>
+      </div>`);
+  }
+
+  function openCostSheet(id) {
+    const r = state.recipes.find(x => x.id === id);
+    if (!r) return;
+    ui.sheetMode = 'cost';
+    ui.editId = id;
+    const per = recipeCostPerServing(r);
+    openSheet(`
+      <h2>Recipe cost</h2>
+      <p class="form-hint" style="margin-bottom:10px">${esc(r.name)} — optional total you paid (not the $–$$$$ rating).</p>
+      <div class="form-group"><label for="fRecipeCost">Total cost ($)</label>
+        <input id="fRecipeCost" type="number" inputmode="decimal" min="0" step="0.01" value="${r.recipeCost != null ? esc(r.recipeCost) : ''}" placeholder="e.g. 24.50"></div>
+      <p class="form-hint">Servings: ${esc(r.servingsDefault != null ? r.servingsDefault : 'not set (uses 1)')}${per != null ? ' · currently ' + esc(formatMoney(per)) + '/serving' : ''}</p>
+      ${(() => { const est = estimateRecipeCost(r); return est ? `<p class="form-hint">Table estimate ~${esc(formatMoney(est.total))} total (${esc(est.matched)} matched) → ${esc(formatMoney(est.perServing))}/serving. Manual total above overrides the estimate on cards.</p>` : `<p class="form-hint">No staples matched yet — edit <button type="button" class="btn-ghost btn-sm" id="costOpenPrices" style="display:inline;padding:0;min-height:auto">staple prices</button> if you want estimates.</p>`; })()}
+      <div class="form-actions">
+        <button class="btn btn-secondary" type="button" id="clearRecipeCostBtn">Clear</button>
+        <button class="btn btn-secondary" type="button" id="cancelSheet">Cancel</button>
+        <button class="btn btn-primary" type="button" id="saveRecipeCostBtn">Save</button>
+      </div>`);
+  }
+
+  function afterRatingPantryPrompt(recipe) {
+    // REQUIRED: automatically deduct matching pantry items when marked made
+    const deducted = autoDeductPantryForRecipe(recipe);
+    if (!deducted.length) {
+      toast('No pantry overlaps to deduct');
+      return;
+    }
+    ui.sheetMode = 'deduct';
+    ui.editId = recipe.id;
+    const rows = deducted.map(d => `
+      <div class="form-group">
+        <label>${esc(d.name)} (was ${esc(d.before)} → now ${esc(d.after)})</label>
+        <div class="form-hint">Deducted ${esc(d.amt)}. Adjust remaining qty if needed:</div>
+        <input type="number" inputmode="decimal" min="0" step="1" value="${esc(d.after)}" data-set-pantry-id="${esc(d.id)}">
+      </div>`).join('');
+    openSheet(`
+      <h2>Pantry updated</h2>
+      <p class="form-hint" style="margin-bottom:10px">Auto-deducted ingredients for <strong>${esc(recipe.name)}</strong>. Tweak quantities if needed:</p>
+      ${rows}
+      <div class="form-actions">
+        <button class="btn btn-secondary" type="button" id="skipDeduct">Done</button>
+        <button class="btn btn-primary" type="button" id="applyDeduct">Save adjustments</button>
+      </div>`);
+  }
+
+  function openPlanPicker(dayKey) {
+    ui.sheetMode = 'planPick';
+    ui.editId = dayKey;
+    const sorted = activeRecipes().slice().sort((a, b) => a.name.localeCompare(b.name));
+    if (!sorted.length) {
+      openSheet(`<h2>Add to day</h2><div class="empty"><strong>No recipes</strong></div>
+        <button class="btn btn-secondary btn-block" type="button" id="cancelSheet">Close</button>`);
+      return;
+    }
+    openSheet(`
+      <h2>Add recipe to day</h2>
+      <div class="action-list">
+        ${sorted.map(r => `<button type="button" class="action-item" data-assign="${esc(r.id)}">${esc(r.name)}</button>`).join('')}
+        <button type="button" class="action-item" id="cancelSheet">Cancel</button>
+      </div>`);
+  }
+
+  function exportData() {
+    state.lastExportAt = new Date().toISOString();
+    save();
+    ui.backupDismissed = false;
+    const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'recipe-saver-backup.json';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    updateBackupBanner();
+    toast('Backup exported');
+  }
+
+  function importData(file) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(reader.result);
+        if (Array.isArray(data)) {
+          state.recipes = data.map(normalizeRecipe);
+        } else if (data && typeof data === 'object') {
+          state.recipes = Array.isArray(data.recipes) ? data.recipes.map(normalizeRecipe) : state.recipes;
+          state.pantry = Array.isArray(data.pantry) ? data.pantry.map(p => ({
+            id: p.id || uid(), name: p.name || '', qty: Number(p.qty) || 0
+          })) : state.pantry;
+          state.mealPlan = data.mealPlan && typeof data.mealPlan === 'object' ? data.mealPlan : state.mealPlan;
+          if (data.lastExportAt) state.lastExportAt = data.lastExportAt;
+          if (data.priceOverrides && typeof data.priceOverrides === 'object') state.priceOverrides = data.priceOverrides;
+        } else throw new Error('bad format');
+        save();
+        renderAll();
+        toast('Import complete');
+      } catch (e) {
+        toast('Import failed — invalid JSON');
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  function deleteRecipeById(id) {
+    // Swipe/menu delete archives; permanent delete only from archive view
+    const r = state.recipes.find(x => x.id === id);
+    if (!r) return false;
+    if (r.archived || ui.showArchive) {
+      return permanentlyDeleteRecipe(id);
+    }
+    return archiveRecipeById(id);
+  }
+
+  let pressTimer = null;
+  let swipeState = null; // { item, front, startX, startY, dx, swiping, opened }
+  let ignoreNextOpen = false;
+
+  function resetAllSwipes(except) {
+    $$('.swipe-item').forEach(item => {
+      if (except && item === except) return;
+      const front = item.querySelector('.swipe-front');
+      if (front) {
+        front.style.transform = '';
+        front.classList.remove('dragging');
+      }
+      item.classList.remove('open-left', 'open-right');
+    });
+  }
+
+  function bindSwipeDelete() {
+    const box = $('#recipeCards');
+    const THRESH = 72;
+    const MAX = 96;
+
+    box.addEventListener('touchstart', (e) => {
+      if (e.target.closest('.swipe-del') || e.target.closest('.menu-btn')) return;
+      const item = e.target.closest('.swipe-item');
+      if (!item) return;
+      const t = e.changedTouches[0];
+      const front = item.querySelector('.swipe-front');
+      resetAllSwipes(item);
+      swipeState = {
+        item, front, startX: t.clientX, startY: t.clientY,
+        dx: 0, swiping: false, moved: false
+      };
+    }, { passive: true });
+
+    box.addEventListener('touchmove', (e) => {
+      if (!swipeState) return;
+      const t = e.changedTouches[0];
+      const dx = t.clientX - swipeState.startX;
+      const dy = t.clientY - swipeState.startY;
+      if (!swipeState.swiping) {
+        if (Math.abs(dx) < 12 && Math.abs(dy) < 12) return;
+        if (Math.abs(dy) > Math.abs(dx)) {
+          // vertical scroll — cancel swipe
+          swipeState = null;
+          if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
+          return;
+        }
+        swipeState.swiping = true;
+        if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
+        swipeState.front.classList.add('dragging');
+      }
+      if (e.cancelable) e.preventDefault();
+      const clamped = Math.max(-MAX, Math.min(MAX, dx));
+      swipeState.dx = clamped;
+      swipeState.moved = true;
+      swipeState.front.style.transform = `translateX(${clamped}px)`;
+    }, { passive: false });
+
+    const endSwipe = (e) => {
+      if (!swipeState) return;
+      const { item, front, dx, swiping, moved } = swipeState;
+      front.classList.remove('dragging');
+      if (swiping && Math.abs(dx) >= THRESH) {
+        const open = dx < 0 ? -MAX : MAX;
+        front.style.transform = `translateX(${open}px)`;
+        item.classList.toggle('open-left', open < 0);
+        item.classList.toggle('open-right', open > 0);
+        ignoreNextOpen = true;
+        setTimeout(() => { ignoreNextOpen = false; }, 280);
+      } else {
+        front.style.transform = '';
+        item.classList.remove('open-left', 'open-right');
+        if (moved && swiping) {
+          ignoreNextOpen = true;
+          setTimeout(() => { ignoreNextOpen = false; }, 280);
+        }
+      }
+      swipeState = null;
+    };
+    box.addEventListener('touchend', endSwipe);
+    box.addEventListener('touchcancel', endSwipe);
+
+    window.addEventListener('scroll', () => resetAllSwipes(), { passive: true });
+  }
+
+  function bindLongPress() {
+    const cards = $('#recipeCards');
+    cards.addEventListener('touchstart', (e) => {
+      const card = e.target.closest('.card');
+      if (!card || e.target.closest('.menu-btn') || e.target.closest('.swipe-del')) return;
+      pressTimer = setTimeout(() => {
+        if (swipeState && swipeState.swiping) return;
+        resetAllSwipes();
+        openMenu(card.dataset.id);
+        pressTimer = null;
+      }, 520);
+    }, { passive: true });
+    const clear = () => { if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; } };
+    cards.addEventListener('touchend', clear);
+    cards.addEventListener('touchmove', (e) => {
+      // clear long-press on any meaningful move (swipe handler may also clear)
+      if (pressTimer) clear();
+    }, { passive: true });
+    cards.addEventListener('touchcancel', clear);
+  }
+
+  function fallbackCopy(text) {
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); toast('Copied'); }
+    catch { toast('Copy failed'); }
+    document.body.removeChild(ta);
+  }
+
+  function onClick(e) {
+    const nav = e.target.closest('.nav-btn');
+    if (nav) { setTab(nav.dataset.nav); return; }
+
+    if (e.target.id === 'addRecipeBtn' || e.target.closest('#addRecipeBtn')) { openAdd(); return; }
+    if (e.target.id === 'exportBtn' || e.target.closest('#exportBtn')) { exportData(); return; }
+    if (e.target.id === 'importBtn' || e.target.closest('#importBtn')) { $('#importFile').click(); return; }
+    if (e.target.id === 'pricesBtn' || e.target.closest('#pricesBtn') || e.target.id === 'detailPricesBtn' || e.target.id === 'costOpenPrices') {
+      openPricesSheet(); return;
+    }
+    if (e.target.id === 'tonightBtn' || e.target.id === 'tonightBtnPantry' || e.target.closest('#tonightBtn') || e.target.closest('#tonightBtnPantry')) {
+      openTonightSheet(); return;
+    }
+    const tonightId = e.target.closest('[data-tonight-id]');
+    if (tonightId) {
+      const id = tonightId.dataset.tonightId;
+      closeSheet();
+      openDetail(id);
+      return;
+    }
+    if (e.target.id === 'savePricesBtn') {
+      $$('[data-price-id]').forEach(inp => {
+        setPriceOverride(inp.dataset.priceId, (inp.value || '').trim());
+      });
+      closeSheet();
+      renderAll();
+      toast('Prices saved — estimates update library-wide');
+      return;
+    }
+    if (e.target.id === 'resetAllPricesBtn') {
+      if (!confirm('Clear all local price overrides? Averages will be used again.')) return;
+      state.priceOverrides = {};
+      save();
+      openPricesSheet();
+      toast('Overrides cleared');
+      return;
+    }
+    if (e.target.id === 'clearFiltersBtn') {
+      ui.protein.clear(); ui.cook.clear(); ui.cost.clear();
+      ui.cuisine.clear(); ui.occasion.clear(); ui.difficulty.clear();
+      renderRecipes(); return;
+    }
+    if (e.target.id === 'archiveViewBtn' || e.target.closest('#archiveViewBtn')) {
+      ui.showArchive = !ui.showArchive; renderAll(); return;
+    }
+    if (e.target.id === 'exitArchiveBtn') { ui.showArchive = false; renderAll(); return; }
+    if (e.target.id === 'backupNowBtn') { exportData(); return; }
+    if (e.target.id === 'backupDismissBtn') {
+      ui.backupDismissed = true; updateBackupBanner(); return;
+    }
+    if (e.target.id === 'weekPrev') { ui.weekOffset--; renderPlan(); return; }
+    if (e.target.id === 'weekNext') { ui.weekOffset++; renderPlan(); return; }
+    if (e.target.id === 'weekTodayBtn') { ui.weekOffset = 0; renderPlan(); return; }
+
+    const chip = e.target.closest('.chip[data-id]');
+    if (chip && chip.closest('#filterProtein')) {
+      const id = chip.dataset.id;
+      if (ui.protein.has(id)) ui.protein.delete(id); else ui.protein.add(id);
+      renderRecipes(); return;
+    }
+    if (chip && chip.closest('#filterCook')) {
+      const id = chip.dataset.id;
+      if (ui.cook.has(id)) ui.cook.delete(id); else ui.cook.add(id);
+      renderRecipes(); return;
+    }
+    if (chip && chip.closest('#filterCost')) {
+      const id = chip.dataset.id;
+      if (ui.cost.has(id)) ui.cost.delete(id); else ui.cost.add(id);
+      renderRecipes(); return;
+    }
+    if (chip && chip.closest('#filterCuisine')) {
+      const id = chip.dataset.id;
+      if (ui.cuisine.has(id)) ui.cuisine.delete(id); else ui.cuisine.add(id);
+      renderRecipes(); return;
+    }
+    if (chip && chip.closest('#filterOccasion')) {
+      const id = chip.dataset.id;
+      if (ui.occasion.has(id)) ui.occasion.delete(id); else ui.occasion.add(id);
+      renderRecipes(); return;
+    }
+    if (chip && chip.closest('#filterDifficulty')) {
+      const id = chip.dataset.id;
+      if (ui.difficulty.has(id)) ui.difficulty.delete(id); else ui.difficulty.add(id);
+      renderRecipes(); return;
+    }
+
+    const swipeDel = e.target.closest('[data-swipe-del]');
+    if (swipeDel) {
+      deleteRecipeById(swipeDel.dataset.swipeDel);
+      return;
+    }
+
+    const openSwipe = e.target.closest('.swipe-item.open-left, .swipe-item.open-right');
+    if (openSwipe && !e.target.closest('.swipe-del')) {
+      resetAllSwipes();
+      return;
+    }
+
+    const menuBtn = e.target.closest('.menu-btn');
+    if (menuBtn) { resetAllSwipes(); openMenu(menuBtn.dataset.menu); return; }
+
+    const openUrl = e.target.closest('[data-open-url]');
+    if (openUrl && !e.target.closest('.menu-btn') && !e.target.closest('.swipe-del')) {
+      if (ignoreNextOpen) { ignoreNextOpen = false; return; }
+      const r = state.recipes.find(x => x.id === openUrl.dataset.openUrl);
+      if (r && r.url) window.open(r.url, '_blank', 'noopener');
+      return;
+    }
+
+    const planAdd = e.target.closest('[data-plan-add]');
+    if (planAdd) { openPlanPicker(planAdd.dataset.planAdd); return; }
+    const unplan = e.target.closest('[data-unplan]');
+    if (unplan) {
+      const key = unplan.dataset.unplan;
+      const rid = unplan.dataset.rid;
+      state.mealPlan[key] = (state.mealPlan[key] || []).filter(id => id !== rid);
+      if (!state.mealPlan[key].length) delete state.mealPlan[key];
+      save(); renderPlan(); return;
+    }
+
+    if (e.target.id === 'shopSelectWeek') {
+      const active = new Set(activeRecipes().map(r => r.id));
+      ui.shopSelected = new Set(thisWeekRecipeIds().filter(id => active.has(id)));
+      renderShopping();
+      toast(ui.shopSelected.size ? "Selected this week's meals" : 'No meals planned this week');
+      return;
+    }
+    if (e.target.id === 'shopSelectAll') {
+      ui.shopSelected = new Set(activeRecipes().map(r => r.id));
+      renderShopping(); return;
+    }
+    if (e.target.id === 'shopClear') {
+      ui.shopSelected.clear();
+      $('#shoppingResult').classList.add('hidden');
+      renderShopping(); return;
+    }
+    if (e.target.id === 'buildShoppingBtn') {
+      const toggle = $('#excludePantryToggle');
+      if (toggle) ui.excludePantry = !!toggle.checked;
+      const recipes = activeRecipes().filter(r => ui.shopSelected.has(r.id));
+      if (!recipes.length) { toast('Select at least one recipe'); return; }
+      const merged = mergeIngredientsFiltered(recipes, ui.excludePantry);
+      renderShoppingResult(merged.lines, merged.excluded);
+      toast(ui.excludePantry ? 'List built (pantry excluded)' : 'List built');
+      return;
+    }
+    if (e.target.id === 'copyShopBtn') {
+      const lines = JSON.parse($('#shoppingResult').dataset.lines || '[]');
+      const text = lines.join('\n');
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(() => toast('Copied'), () => fallbackCopy(text));
+      } else fallbackCopy(text);
+      return;
+    }
+    if (e.target.id === 'shareShopBtn') {
+      const lines = JSON.parse($('#shoppingResult').dataset.lines || '[]');
+      const text = lines.join('\n');
+      if (navigator.share) {
+        navigator.share({ title: 'Shopping list', text }).catch(() => {});
+      } else {
+        toast('Share not available — use Copy');
+      }
+      return;
+    }
+
+    if (e.target.id === 'pantryAddBtn') {
+      const name = $('#pantryNameIn').value.trim();
+      const qty = Number($('#pantryQtyIn').value);
+      if (!name) { toast('Enter an item name'); return; }
+      const existing = state.pantry.find(p => normName(p.name) === normName(name));
+      if (existing) existing.qty = (Number(existing.qty) || 0) + (Number.isFinite(qty) ? qty : 1);
+      else state.pantry.push({ id: uid(), name, qty: Number.isFinite(qty) ? qty : 1 });
+      $('#pantryNameIn').value = '';
+      $('#pantryQtyIn').value = '1';
+      save(); renderPantry(); toast('Added to pantry'); return;
+    }
+    const pq = e.target.closest('[data-pq]');
+    if (pq) {
+      const p = state.pantry.find(x => x.id === pq.dataset.pq);
+      if (p) {
+        p.qty = Math.max(0, (Number(p.qty) || 0) + Number(pq.dataset.d));
+        save(); renderPantry();
+      }
+      return;
+    }
+    const pdel = e.target.closest('[data-pdel]');
+    if (pdel) {
+      if (!confirm('Remove this pantry item?')) return;
+      state.pantry = state.pantry.filter(x => x.id !== pdel.dataset.pdel);
+      save(); renderPantry(); return;
+    }
+
+    if (e.target.id === 'cancelSheet' || e.target.id === 'skipDeduct' || e.target.closest('#cancelSheet')) {
+      closeSheet(); return;
+    }
+    if (e.target.id === 'backdrop' || e.target === $('#backdrop')) { closeSheet(); return; }
+
+    if (e.target.id === 'saveRecipeBtn') { saveFromForm(); return; }
+    if (e.target.id === 'micBtn' || e.target.closest('#micBtn')) { toggleMic('fMods'); return; }
+
+    const proteinPick = e.target.closest('.protein-pick');
+    if (proteinPick) {
+      $('#fProtein').value = proteinPick.dataset.protein;
+      $$('.protein-pick').forEach(b => b.classList.toggle('active', b === proteinPick));
+      return;
+    }
+    const costPick = e.target.closest('.cost-pick');
+    if (costPick) {
+      $('#fCost').value = costPick.dataset.cost;
+      $$('.cost-pick').forEach(b => b.classList.toggle('active', b === costPick));
+      return;
+    }
+    const cuisinePick = e.target.closest('.cuisine-pick');
+    if (cuisinePick) {
+      $('#fCuisine').value = cuisinePick.dataset.cuisine;
+      $$('.cuisine-pick').forEach(b => b.classList.toggle('active', b === cuisinePick));
+      return;
+    }
+    const occasionPick = e.target.closest('.occasion-pick');
+    if (occasionPick) {
+      $('#fOccasion').value = occasionPick.dataset.occasion;
+      $$('.occasion-pick').forEach(b => b.classList.toggle('active', b === occasionPick));
+      return;
+    }
+    const difficultyPick = e.target.closest('.difficulty-pick');
+    if (difficultyPick) {
+      const el = $('#fDifficulty');
+      if (el) el.value = difficultyPick.dataset.difficulty;
+      $$('.difficulty-pick').forEach(b => b.classList.toggle('active', b === difficultyPick));
+      return;
+    }
+
+    if (e.target.id === 'extractBtn') {
+      const url = ($('#fUrl') || {}).value.trim();
+      if (!url) { toast('Paste a URL first'); return; }
+      const btn = e.target;
+      btn.disabled = true; btn.textContent = 'Extracting…';
+      fetchViaProxies(url).then(html => {
+        const ings = extractIngredientsFromHtml(html);
+        if (!ings.length) throw new Error('none');
+        const ta = $('#fIngredients');
+        ta.value = (ta.value ? ta.value.replace(/\s*$/, '\n') : '') + ings.join('\n');
+        toast('Extracted ' + ings.length + ' ingredients');
+      }).catch(() => {
+        toast('Could not extract — paste ingredients manually');
+      }).finally(() => { btn.disabled = false; btn.textContent = 'Extract from URL'; });
+      return;
+    }
+
+    const act = e.target.closest('[data-act]');
+    if (act && ui.sheetMode === 'menu') {
+      const id = ui.editId;
+      const a = act.dataset.act;
+      if (a === 'cancel') { closeSheet(); return; }
+      if (a === 'open') {
+        const r = state.recipes.find(x => x.id === id);
+        closeSheet();
+        if (r) window.open(r.url, '_blank', 'noopener');
+        return;
+      }
+      if (a === 'detail') { openDetail(id); return; }
+      if (a === 'cook') { openCookingMode(id); return; }
+      if (a === 'edit') { openEdit(id); return; }
+      if (a === 'mods') { openModsQuick(id); return; }
+      if (a === 'rate') { openRate(id); return; }
+      if (a === 'cost') { openCostSheet(id); return; }
+      if (a === 'restore') { restoreRecipeById(id); closeSheet(); return; }
+      if (a === 'purge') { permanentlyDeleteRecipe(id); return; }
+      if (a === 'delete') {
+        deleteRecipeById(id);
+      }
+      return;
+    }
+
+    if (e.target.id === 'saveModsBtn') {
+      const r = state.recipes.find(x => x.id === ui.editId);
+      if (r) {
+        r.modifications = ($('#fMods') || {}).value.trim();
+        r.updatedAt = new Date().toISOString();
+        save(); toast('Changes saved');
+      }
+      closeSheet(); renderAll(); return;
+    }
+
+    const rateBtn = e.target.closest('[data-rate]');
+    if (rateBtn) {
+      ui.ratingValue = Number(rateBtn.dataset.rate);
+      $$('#ratingGrid button').forEach(b => b.classList.toggle('active', Number(b.dataset.rate) === ui.ratingValue));
+      return;
+    }
+    if (e.target.id === 'takePhotoBtn') { $('#photoFile').click(); return; }
+    if (e.target.id === 'clearPhotoBtn') {
+      ui.pendingPhoto = null;
+      const prev = $('#photoPreview');
+      if (prev) prev.innerHTML = '';
+      return;
+    }
+    if (e.target.closest('[data-rate-diff]')) {
+      const btn = e.target.closest('[data-rate-diff]');
+      ui.pendingDifficulty = btn.dataset.rateDiff;
+      $$('.rate-diff').forEach(b => b.classList.toggle('active', b === btn));
+      return;
+    }
+    if (e.target.id === 'saveRatingBtn') {
+      const r = state.recipes.find(x => x.id === ui.editId);
+      if (!r) { closeSheet(); return; }
+      if (ui.ratingValue == null) { toast('Pick a rating 1–10'); return; }
+      r.made = true;
+      r.rating = ui.ratingValue;
+      if (ui.pendingDifficulty) r.difficulty = ui.pendingDifficulty;
+      r.ratingNote = ($('#fRatingNote') || {}).value.trim();
+      r.photo = ui.pendingPhoto;
+      r.updatedAt = new Date().toISOString();
+      save();
+      const snapshot = r;
+      closeSheet();
+      renderAll();
+      toast('Rated ★ ' + snapshot.rating);
+      setTimeout(() => afterRatingPantryPrompt(snapshot), 280);
+      return;
+    }
+
+    if (e.target.id === 'applyDeduct') {
+      $$('[data-deduct-id]').forEach(inp => {
+        const p = state.pantry.find(x => x.id === inp.dataset.deductId);
+        if (!p) return;
+        const n = Number(inp.value);
+        if (Number.isFinite(n) && n > 0) p.qty = Math.max(0, (Number(p.qty) || 0) - n);
+      });
+      $$('[data-set-pantry-id]').forEach(inp => {
+        const p = state.pantry.find(x => x.id === inp.dataset.setPantryId);
+        if (!p) return;
+        const n = Number(inp.value);
+        if (Number.isFinite(n) && n >= 0) p.qty = n;
+      });
+      save(); closeSheet(); renderAll(); toast('Pantry updated'); return;
+    }
+
+    if (e.target.id === 'scaleMinus' || e.target.id === 'scalePlus') {
+      const r = state.recipes.find(x => x.id === ui.editId);
+      if (!r) return;
+      let s = ui.detailScale || 4;
+      s = e.target.id === 'scaleMinus' ? Math.max(1, s - 1) : s + 1;
+      ui.detailScale = s;
+      paintDetail(r, s);
+      return;
+    }
+    if (e.target.closest('[data-act-detail-edit]')) {
+      openEdit(ui.editId); return;
+    }
+
+    if (e.target.id === 'detailCostBtn') {
+      openCostSheet(ui.editId); return;
+    }
+    if (e.target.id === 'saveRecipeCostBtn') {
+      const r = state.recipes.find(x => x.id === ui.editId);
+      if (!r) { closeSheet(); return; }
+      const raw = (($('#fRecipeCost') || {}).value || '').trim();
+      if (raw === '') r.recipeCost = null;
+      else {
+        const n = Number(raw);
+        if (!Number.isFinite(n) || n < 0) { toast('Enter a valid cost'); return; }
+        r.recipeCost = Math.round(n * 100) / 100;
+      }
+      r.updatedAt = new Date().toISOString();
+      save(); closeSheet(); renderAll();
+      toast(r.recipeCost != null ? 'Cost saved' : 'Cost cleared');
+      return;
+    }
+    if (e.target.id === 'clearRecipeCostBtn') {
+      const inp = $('#fRecipeCost');
+      if (inp) inp.value = '';
+      return;
+    }
+    if (e.target.id === 'startCookBtn') {
+      openCookingMode(ui.editId); return;
+    }
+    if (e.target.id === 'cookExit') { closeCookingMode(); return; }
+    if (e.target.id === 'cookPrev') {
+      if (ui.cook.index > 0) { ui.cook.index--; paintCookStep(); }
+      return;
+    }
+    if (e.target.id === 'cookNext' || e.target.id === 'cookStep') {
+      if (ui.cook.index >= ui.cook.steps.length - 1) {
+        closeCookingMode();
+        toast('Nice work!');
+        return;
+      }
+      ui.cook.index++;
+      paintCookStep();
+      return;
+    }
+    if (e.target.id === 'timerAddBtn') {
+      const mins = Number(($('#timerMins') || {}).value) || 5;
+      addTimer(mins * 60, mins + ' min');
+      return;
+    }
+    if (e.target.id === 'timerFromStepBtn') {
+      const step = (ui.cook.steps || [])[ui.cook.index] || '';
+      const mins = parseMinutesFromStep(step);
+      if (!mins) { toast('No time found in this step — enter minutes manually'); return; }
+      addTimer(mins * 60, 'Step ' + (ui.cook.index + 1) + ' (' + mins + 'm)');
+      return;
+    }
+    const tpause = e.target.closest('[data-tpause]');
+    if (tpause) {
+      const t = ui.timers.find(x => x.id === tpause.dataset.tpause);
+      if (t && !t.done) {
+        t.paused = !t.paused;
+        if (!t.paused) ensureTimerTick();
+        renderTimers();
+      }
+      return;
+    }
+    const tclear = e.target.closest('[data-tclear]');
+    if (tclear) {
+      ui.timers = ui.timers.filter(x => x.id !== tclear.dataset.tclear);
+      renderTimers();
+      return;
+    }
+    const toggleMiss = e.target.closest('[data-toggle-miss]');
+    if (toggleMiss) {
+      const rid = toggleMiss.dataset.toggleMiss;
+      const ing = toggleMiss.dataset.ing;
+      const r = state.recipes.find(x => x.id === rid);
+      if (!r) return;
+      const key = normName(ing);
+      const isMiss = (r.missingIngredients || []).includes(key);
+      markIngredientMissing(rid, ing, !isMiss);
+      // refresh detail if open
+      if (ui.sheetMode === 'detail' && ui.editId === rid) {
+        paintDetail(r, ui.detailScale || (r.servingsDefault || 4));
+      }
+      if (ui.cook.recipeId === rid) paintCookStep();
+      return;
+    }
+    const saveSub = e.target.closest('[data-save-sub]');
+    if (saveSub) {
+      const rid = saveSub.dataset.saveSub;
+      const ing = saveSub.dataset.ing;
+      const inp = $$('[data-custom-sub-ing]').find(el => el.dataset.customSubIng === ing);
+      const text = inp ? inp.value : '';
+      setCustomSubstitution(rid, ing, text);
+      toast('Substitute saved');
+      const r = state.recipes.find(x => x.id === rid);
+      if (r && ui.sheetMode === 'detail') paintDetail(r, ui.detailScale || (r.servingsDefault || 4));
+      if (ui.cook.recipeId === rid) paintCookStep();
+      return;
+    }
+
+    const assign = e.target.closest('[data-assign]');
+    if (assign && ui.sheetMode === 'planPick') {
+      const day = ui.editId;
+      const rid = assign.dataset.assign;
+      if (!state.mealPlan[day]) state.mealPlan[day] = [];
+      if (!state.mealPlan[day].includes(rid)) state.mealPlan[day].push(rid);
+      save(); closeSheet(); renderPlan(); toast('Added to plan'); return;
+    }
+  }
+
+  function onChange(e) {
+    if (e.target.id === 'sortSelect') { ui.sort = e.target.value; renderRecipes(); return; }
+    if (e.target.id === 'searchInput') { ui.search = e.target.value; renderRecipes(); return; }
+    if (e.target.id === 'excludePantryToggle') { ui.excludePantry = !!e.target.checked; return; }
+    if (e.target.matches('[data-shop-id]')) {
+      const id = e.target.dataset.shopId;
+      if (e.target.checked) ui.shopSelected.add(id); else ui.shopSelected.delete(id);
+      return;
+    }
+    if (e.target.id === 'importFile' && e.target.files[0]) {
+      importData(e.target.files[0]); e.target.value = ''; return;
+    }
+    if (e.target.id === 'photoFile' && e.target.files[0]) {
+      const file = e.target.files[0];
+      compressImage(file).then(dataUrl => {
+        ui.pendingPhoto = dataUrl;
+        const prev = $('#photoPreview');
+        if (prev) prev.innerHTML = `<img class="detail-photo" src="${dataUrl}" alt="preview">`;
+        toast('Photo ready (compressed)');
+      }).catch(() => toast('Could not process photo'));
+      e.target.value = '';
+    }
+  }
+
+  load();
+  state.recipes = state.recipes.map(normalizeRecipe);
+  document.addEventListener('click', onClick);
+  document.addEventListener('change', onChange);
+  document.addEventListener('input', (e) => {
+    if (e.target.id === 'searchInput') { ui.search = e.target.value; renderRecipes(); }
+    if (e.target.id === 'priceSearch') {
+      ui.priceFilter = e.target.value || '';
+      // debounce-ish re-render of prices sheet
+      clearTimeout(openPricesSheet._t);
+      openPricesSheet._t = setTimeout(() => { if (ui.sheetMode === 'prices') openPricesSheet(); }, 180);
+    }
+  });
+  $('#backdrop').addEventListener('click', closeSheet);
+  bindLongPress();
+  bindSwipeDelete();
+  renderAll();
+  updateBackupBanner();
+})();
+</script>
+</body>
+</html>
