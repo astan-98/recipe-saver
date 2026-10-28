@@ -631,7 +631,7 @@ a { color: var(--accent); }
     sheetMode: null, editId: null, detailScale: null,
     pendingPhoto: null, ratingValue: null, pendingDifficulty: null,
     speechRec: null, listening: false,
-    cook: { recipeId: null, steps: [], index: 0 },
+    cookMode: { recipeId: null, steps: [], index: 0 },
     timers: [], timerTick: null,
     priceFilter: ''
   };
@@ -734,6 +734,7 @@ a { color: var(--accent); }
   }
 
   function normalizeIng(ing) {
+    if (ing == null) return { raw: '', qty: null, unit: '', name: '' };
     if (typeof ing === 'string') return parseIngredientLine(ing);
     return {
       raw: ing.raw || '',
@@ -894,6 +895,7 @@ a { color: var(--accent); }
     return 1; // unit assumption
   }
   function ingredientEstimatedCost(ing) {
+    if (!ing) return null;
     const staple = findStapleForName(ing.name || ing.raw || '');
     if (!staple) return null;
     const price = effectiveStaplePrice(staple);
@@ -919,6 +921,7 @@ a { color: var(--accent); }
     if (!ings.length) return null;
     let total = 0, matched = 0;
     ings.forEach(ing => {
+      if (!ing) return;
       const est = ingredientEstimatedCost(ing);
       if (est) { total += est.cost; matched++; }
     });
@@ -1725,7 +1728,7 @@ a { color: var(--accent); }
       return;
     }
     closeSheet();
-    ui.cook = { recipeId: id, steps, index: 0 };
+    ui.cookMode = { recipeId: id, steps, index: 0 };
     $('#cookMode').classList.remove('hidden');
     $('#cookTitle').textContent = r.name;
     paintCookStep();
@@ -1733,10 +1736,10 @@ a { color: var(--accent); }
   }
 
   function paintCookStep() {
-    const r = state.recipes.find(x => x.id === ui.cook.recipeId);
+    const r = state.recipes.find(x => x.id === ui.cookMode.recipeId);
     if (!r) return;
-    const steps = ui.cook.steps;
-    const i = ui.cook.index;
+    const steps = ui.cookMode.steps;
+    const i = ui.cookMode.index;
     const raw = steps[i] || '';
     const injected = injectQtyIntoStep(raw, r.ingredients || []);
     $('#cookStep').innerHTML = injected;
@@ -1762,7 +1765,7 @@ a { color: var(--accent); }
 
   function closeCookingMode() {
     $('#cookMode').classList.add('hidden');
-    ui.cook = { recipeId: null, steps: [], index: 0 };
+    ui.cookMode = { recipeId: null, steps: [], index: 0 };
   }
 
   function recipeNameCmp(a, b) {
@@ -1948,7 +1951,7 @@ a { color: var(--accent); }
   }
 
   function renderRecipes() {
-    renderFilterChips();
+    try { renderFilterChips(); } catch (e) { console.warn('renderFilterChips failed', e); }
     const ab = $('#archiveBanner');
     if (ab) ab.classList.toggle('hidden', !ui.showArchive);
     updateBackupBanner();
@@ -1976,10 +1979,15 @@ a { color: var(--accent); }
       }
       return;
     }
-    box.innerHTML = list.map(r => {
+    const html = list.map(r => {
       try { return cardHtml(r); }
-      catch (e) { return ''; }
+      catch (e) { console.warn('cardHtml failed', r && r.id, e); return ''; }
     }).filter(Boolean).join('');
+    if (!html && list.length) {
+      box.innerHTML = `<div class="empty"><strong>Couldn't render ${list.length} recipe${list.length === 1 ? '' : 's'}</strong>${list.map(r => esc(r.name || 'Untitled')).join(', ')}<br><button type="button" class="btn btn-secondary btn-sm" id="clearFiltersBtn" style="margin-top:10px">Clear filters</button></div>`;
+      return;
+    }
+    box.innerHTML = html;
   }
 
   function renderPlan() {
@@ -3017,16 +3025,16 @@ a { color: var(--accent); }
     }
     if (e.target.id === 'cookExit') { closeCookingMode(); return; }
     if (e.target.id === 'cookPrev') {
-      if (ui.cook.index > 0) { ui.cook.index--; paintCookStep(); }
+      if (ui.cookMode.index > 0) { ui.cookMode.index--; paintCookStep(); }
       return;
     }
     if (e.target.id === 'cookNext' || e.target.id === 'cookStep') {
-      if (ui.cook.index >= ui.cook.steps.length - 1) {
+      if (ui.cookMode.index >= ui.cookMode.steps.length - 1) {
         closeCookingMode();
         toast('Nice work!');
         return;
       }
-      ui.cook.index++;
+      ui.cookMode.index++;
       paintCookStep();
       return;
     }
@@ -3036,10 +3044,10 @@ a { color: var(--accent); }
       return;
     }
     if (e.target.id === 'timerFromStepBtn') {
-      const step = (ui.cook.steps || [])[ui.cook.index] || '';
+      const step = (ui.cookMode.steps || [])[ui.cookMode.index] || '';
       const mins = parseMinutesFromStep(step);
       if (!mins) { toast('No time found in this step — enter minutes manually'); return; }
-      addTimer(mins * 60, 'Step ' + (ui.cook.index + 1) + ' (' + mins + 'm)');
+      addTimer(mins * 60, 'Step ' + (ui.cookMode.index + 1) + ' (' + mins + 'm)');
       return;
     }
     const tpause = e.target.closest('[data-tpause]');
@@ -3071,7 +3079,7 @@ a { color: var(--accent); }
       if (ui.sheetMode === 'detail' && ui.editId === rid) {
         paintDetail(r, ui.detailScale || (r.servingsDefault || 4));
       }
-      if (ui.cook.recipeId === rid) paintCookStep();
+      if (ui.cookMode.recipeId === rid) paintCookStep();
       return;
     }
     const saveSub = e.target.closest('[data-save-sub]');
@@ -3084,7 +3092,7 @@ a { color: var(--accent); }
       toast('Substitute saved');
       const r = state.recipes.find(x => x.id === rid);
       if (r && ui.sheetMode === 'detail') paintDetail(r, ui.detailScale || (r.servingsDefault || 4));
-      if (ui.cook.recipeId === rid) paintCookStep();
+      if (ui.cookMode.recipeId === rid) paintCookStep();
       return;
     }
 
