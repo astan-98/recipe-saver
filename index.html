@@ -186,6 +186,12 @@ a { color: var(--accent); }
 .form-group input:focus, .form-group textarea:focus, .form-group select:focus { border-color: var(--accent); }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .form-hint { font-size: .72rem; color: var(--text2); margin-top: 4px; }
+.paste-box { margin-top: 10px; }
+.paste-box summary { font-size: .85rem; font-weight: 650; color: var(--accent); min-height: 44px; display: flex; align-items: center; cursor: pointer; list-style: none; }
+.paste-box summary::-webkit-details-marker { display: none; }
+.paste-box summary::before { content: '＋'; margin-right: 6px; }
+.paste-box[open] summary::before { content: '－'; }
+.paste-box textarea { width: 100%; min-height: 120px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--border); background: var(--bg); font-size: 16px; line-height: 1.4; margin-bottom: 8px; }
 .form-actions { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
 .form-actions .btn { flex: 1; min-width: 120px; }
 .action-list { display: flex; flex-direction: column; gap: 4px; }
@@ -460,7 +466,7 @@ a { color: var(--accent); }
 </nav>
 
 <div class="sheet-backdrop" id="backdrop"></div>
-<!-- rs-build: 20261029-extract-fallback-v3 -->
+<!-- rs-build: 20261029-extract-robust-v4 -->
 <div class="sheet" id="sheet" role="dialog" aria-modal="true">
   <div class="sheet-handle" id="sheetHandle" aria-hidden="true"></div>
   <div class="sheet-scroll" id="sheetScroll">
@@ -1212,12 +1218,14 @@ a { color: var(--accent); }
     else startDictation(textareaId);
   }
 
-  function classifyFetchError(err, label, status) {
+  function classifyFetchError(err, label, status, timeoutMs) {
     if (status === 401 || status === 403) return new Error(label + ': blocked or HTTP ' + status);
+    if (status === 451) return new Error(label + ': site blocks this reader (HTTP 451)');
+    if (status === 429) return new Error(label + ': rate limited (HTTP 429)');
     if (status) return new Error(label + ': blocked or HTTP ' + status);
     const name = (err && err.name) || '';
     const msg = String((err && err.message) || err || '');
-    if (name === 'AbortError' || /aborted|abort/i.test(msg)) return new Error(label + ': timeout (12s)');
+    if (name === 'AbortError' || /aborted|abort/i.test(msg)) return new Error(label + ': timeout (' + Math.round((timeoutMs || 12000) / 1000) + 's)');
     if (name === 'TypeError' || /failed to fetch|networkerror|load failed|cors/i.test(msg)) {
       return new Error(label + ': network or CORS blocked');
     }
@@ -1225,38 +1233,163 @@ a { color: var(--accent); }
     return new Error(label + ': ' + (msg || 'fetch failed'));
   }
 
+  const JINA_BASE = 'https://r.jina.ai/';
+  function cleanFetchUrl(url) { return String(url || '').trim().replace(/#.*$/, ''); }
+
+  // One attempt with its own timeout; resolves to body text or rejects with a labelled reason.
+  async function fetchAttempt(attempt, outerSignal) {
+    const ctrl = new AbortController();
+    const onOuter = () => ctrl.abort();
+    if (outerSignal) outerSignal.addEventListener('abort', onOuter);
+    const timer = setTimeout(() => ctrl.abort(), attempt.timeout);
+    try {
+      const opts = { signal: ctrl.signal, mode: 'cors', credentials: 'omit' };
+      if (attempt.headers) opts.headers = attempt.headers;
+      const res = await fetch(attempt.url, opts);
+      if (!res.ok) throw classifyFetchError(null, attempt.label, res.status);
+      const body = await res.text();
+      const upstream = /^\s*error code:\s*(\d+)/i.exec(body || '');
+      if (upstream) throw new Error(attempt.label + ': upstream error ' + upstream[1]);
+      if (!body || body.length <= 200) throw new Error(attempt.label + ': empty response (' + (body ? body.length : 0) + ' bytes)');
+      if (attempt.expect === 'html' && !/<(html|body|div|p|article)[\s>]/i.test(body)) {
+        throw new Error(attempt.label + ': response was not HTML');
+      }
+      if (isBotCheckPage(body)) throw new Error(attempt.label + ': got a bot-check/CAPTCHA page');
+      return { body, label: attempt.label };
+    } catch (e) {
+      if (outerSignal && outerSignal.aborted && !(e && /^(proxy |direct|jina)/.test(String(e.message || '')))) {
+        throw new Error(attempt.label + ': cancelled (another route won)');
+      }
+      throw (e && /^(proxy |direct|jina)/.test(String(e.message || ''))) ? e : classifyFetchError(e, attempt.label, null, attempt.timeout);
+    } finally {
+      clearTimeout(timer);
+      if (outerSignal) outerSignal.removeEventListener('abort', onOuter);
+    }
+  }
+
+  // Race all routes in parallel; first valid HTML wins, the rest are aborted.
   async function fetchViaProxies(url) {
-    const encoded = encodeURIComponent(url);
+    const clean = cleanFetchUrl(url);
+    const encoded = encodeURIComponent(clean);
     const attempts = [
-      { label: 'proxy allorigins', url: 'https://api.allorigins.win/raw?url=' + encoded },
-      { label: 'proxy corsproxy', url: 'https://corsproxy.io/?' + encoded },
-      { label: 'direct', url: url, direct: true }
+      { label: 'jina html', url: JINA_BASE + clean, headers: { 'X-Return-Format': 'html' }, timeout: 15000, expect: 'html' },
+      { label: 'proxy allorigins', url: 'https://api.allorigins.win/raw?url=' + encoded, timeout: 8000, expect: 'html' },
+      { label: 'proxy codetabs', url: 'https://api.codetabs.com/v1/proxy?quest=' + encoded, timeout: 8000, expect: 'html' },
+      { label: 'direct', url: clean, timeout: 6000, expect: 'html' }
     ];
-    const failures = [];
-    for (const attempt of attempts) {
-      try {
-        const ctrl = new AbortController();
-        const t = setTimeout(() => ctrl.abort(), 12000);
-        const opts = attempt.direct
-          ? { mode: 'cors', signal: ctrl.signal }
-          : { signal: ctrl.signal };
-        const res = await fetch(attempt.url, opts);
-        clearTimeout(t);
-        if (!res.ok) throw classifyFetchError(null, attempt.label, res.status);
-        const body = await res.text();
-        const upstream = /^\s*error code:\s*(\d+)/i.exec(body || '');
-        if (upstream) throw new Error(attempt.label + ': upstream error ' + upstream[1]);
-        if (!body || body.length <= 40) throw new Error(attempt.label + ': empty response (' + (body ? body.length : 0) + ' bytes)');
-        return body;
-      } catch (e) {
-        const err = (e && /^(proxy |direct)/.test(String(e.message || ''))) ? e : classifyFetchError(e, attempt.label);
-        console.warn('Extract fetch attempt failed:', err.message);
-        failures.push(err.message);
+    const outer = new AbortController();
+    const failures = new Array(attempts.length);
+    return new Promise((resolve, reject) => {
+      let pending = attempts.length;
+      attempts.forEach((att, i) => {
+        fetchAttempt(att, outer.signal).then(r => {
+          outer.abort();
+          resolve(r);
+        }, err => {
+          failures[i] = err.message;
+          console.warn('Extract fetch attempt failed:', err.message);
+          if (--pending === 0) {
+            const all = new Error('fetch: all attempts failed — ' + failures.filter(Boolean).join('; '));
+            all.stage = 'fetch';
+            all.failures = failures.filter(Boolean);
+            reject(all);
+          }
+        });
+      });
+    });
+  }
+
+  // Jina reader Markdown (simple GET, no custom header → no preflight).
+  async function fetchJinaMarkdown(url) {
+    const r = await fetchAttempt({ label: 'jina markdown', url: JINA_BASE + cleanFetchUrl(url), timeout: 15000 });
+    return r.body;
+  }
+
+  function isBotCheckPage(body) {
+    const head = String(body || '').slice(0, 4000);
+    return /<title>\s*(just a moment|attention required|access denied|security check)/i.test(head)
+      || /^Title:\s*(just a moment|attention required|access denied)/im.test(head)
+      || /performing security verification|verify you are (not a bot|human)|requiring CAPTCHA/i.test(head);
+  }
+
+  // ---- Plain text / Markdown recipe parser (jina Markdown + "Paste recipe text") ----
+  const TXT_STOP_RE = /^(newer post|older post|previous post|next post|share( this)?|leave a (comment|reply)|comments?|related (posts|recipes)|you may also like|print this recipe|jump to recipe|nutrition( facts| information)?)\b/i;
+  function mdClean(line) {
+    return String(line || '')
+      .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')            // images
+      .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')           // links → text
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/(\*\*|__)/g, '')
+      .replace(/^\s*#{1,6}\s*/, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+  function parseRecipeText(text) {
+    if (isBotCheckPage(text)) return { ingredients: [], steps: [], botCheck: true };
+    const rawLines = String(text || '').replace(/\r\n?/g, '\n').split('\n');
+    const ings = [], steps = [];
+    let mode = null;           // null | 'ing' | 'skip' | 'steps'
+    let sawIngHeading = false;
+    const BULLET_RE = /^\s*(?:[*\-•–·▪●]|\d{1,2}[.)])\s+/;
+    const NUM_RE = /^\s*\d{1,2}[.)]\s+/;
+    for (let li = 0; li < rawLines.length; li++) {
+      const raw = rawLines[li];
+      if (/^(Title|URL Source|Markdown Content|Published Time):/i.test(raw.trim())) continue;
+      const isBullet = BULLET_RE.test(raw);
+      const isNum = NUM_RE.test(raw);
+      // "**Brine**Thoroughly mix…" → drop the fused bold section title
+      const fused = /^\s*(\*\*|__)([^*_]{1,60}?)\1\s*(?=[A-Z0-9“"(])/.exec(raw);
+      if (fused && raw.slice(fused[0].length).trim().length >= FB_MIN_STEP) {
+        rawLines[li] = raw.slice(fused[0].length);
+        li--; continue;
+      }
+      const rawTrim = raw.trim();
+      const boldWrapped = /^(\*\*|__)[^*]+(\*\*|__):?$/.test(rawTrim);
+      const hashHeading = /^#{1,6}\s/.test(rawTrim);
+      const line = mdClean(isBullet ? raw.replace(BULLET_RE, '') : raw);
+      if (!line) continue;
+      if (TXT_STOP_RE.test(line)) {
+        if (/^print this recipe|^jump to recipe/i.test(line)) continue;
+        if (mode) break; else continue;
+      }
+      if (FB_INGR_RE.test(line)) { mode = 'ing'; sawIngHeading = true; continue; }
+      if (FB_TOOLS_RE.test(line)) { mode = 'skip'; continue; }
+      if (FB_STEPS_RE.test(line)) { mode = 'steps'; continue; }
+      const shortTitle = line.length <= 60 && !/[.!?]$/.test(line) && !isBullet;
+      const looksHeading = hashHeading || boldWrapped || (shortTitle && /:$/.test(line));
+      if (looksHeading || (shortTitle && mode !== 'ing' && mode !== null)) {
+        if (mode === 'ing' || mode === 'skip') mode = 'steps';
+        continue;                                    // section title like "Brine"
+      }
+      if (mode === 'ing') {
+        // A long sentence after the list means the steps started without a heading.
+        if (!isBullet && (line.length > 90 || (/[.!]$/.test(line) && line.split(' ').length >= 7))) {
+          mode = 'steps';
+        } else { ings.push(line); continue; }
+      }
+      if (mode === 'skip') {
+        if (isBullet) continue;
+        mode = 'steps';                              // prose after a Tools list = steps begin
+      }
+      if (mode === 'steps') {
+        if (line.length >= FB_MIN_STEP || (isNum && line.length >= 8)) steps.push(line);
+        continue;
       }
     }
-    const all = new Error('fetch: all attempts failed — ' + (failures.join('; ') || 'no attempts'));
-    all.stage = 'fetch';
-    throw all;
+    if (!sawIngHeading && !ings.length && !steps.length) {
+      // No headings at all (raw paste): quantity-led short lines → ingredients, sentences → steps.
+      const lines = rawLines
+        .filter(l => !/^(Title|URL Source|Markdown Content|Published Time|Warning):/i.test(l.trim()))
+        .map(l => mdClean(l.replace(BULLET_RE, ''))).filter(l => l && !TXT_STOP_RE.test(l));
+      const qty = lines.filter(l => /^[\d½¼¾⅓⅔⅛]/.test(l) && l.length <= 80 && !/[.!?]$/.test(l));
+      if (qty.length >= 2) {
+        lines.forEach(l => {
+          if (qty.includes(l)) ings.push(l);
+          else if (l.length >= FB_MIN_STEP && /[.!?]$/.test(l)) steps.push(l);
+        });
+      }
+    }
+    return { ingredients: uniqueOrdered(ings), steps: uniqueOrdered(steps) };
   }
 
   // ---- Generic heading-based fallback (blogs / Shopify articles without JSON-LD) ----
@@ -1282,10 +1415,18 @@ a { color: var(--accent); }
     while (b.parentElement && b.parentElement !== scope && FB_INLINE.has(b.tagName)) b = b.parentElement;
     return b;
   }
+  // Element text ignoring media/link children (e.g. <strong><img><a>Video</a><br>Ingredients</strong>).
+  function fbOwnText(el) {
+    if (!el.querySelector || !el.querySelector('a, img, iframe, svg, figure, picture, video, button')) return fbText(el);
+    const c = el.cloneNode(true);
+    c.querySelectorAll('a, img, iframe, svg, figure, picture, video, button').forEach(n => n.remove());
+    return fbText(c);
+  }
   function fbFindHeading(scope, re) {
     const els = scope.querySelectorAll('h1,h2,h3,h4,h5,h6,p,strong,b,span,div');
     for (const el of els) {
-      const txt = fbText(el);
+      if (fbText(el).length > 400) continue;
+      const txt = fbOwnText(el);
       if (!txt || txt.length > 40 || !re.test(txt)) continue;
       if (fbInChrome(el)) continue;
       return fbBlockOf(el, scope);
@@ -1324,14 +1465,21 @@ a { color: var(--accent); }
   }
   // Block text with a leading short bold run (e.g. "<b>Brine<br></b>Thoroughly…") removed.
   function fbStepText(el) {
-    const full = fbText(el);
+    let full = fbText(el);
     if (!full) return '';
-    const bold = el.querySelector && el.querySelector('b, strong');
-    if (bold) {
-      const bt = fbText(bold);
-      if (bt && bt.length <= 40 && full.startsWith(bt)) {
-        const rest = full.slice(bt.length).trim();
-        if (rest) return rest;
+    const bolds = el.querySelectorAll ? Array.from(el.querySelectorAll('b, strong, h1, h2, h3, h4, h5, h6')) : [];
+    if (bolds.length) {
+      const boldAll = bolds.filter(b => !bolds.some(o => o !== b && o.contains(b))).map(fbText).join(' ').replace(/\s+/g, ' ').trim();
+      if (boldAll === full && full.length <= 60) return '';        // bold-only section title
+      const first = fbText(bolds[0]);
+      if (first && first.length <= 60 && full.startsWith(first) && full.length > first.length) {
+        const rest = full.slice(first.length).trim();
+        if (/^[A-Z0-9“"(]/.test(rest)) full = rest;                   // "<b>Brine<br></b>Thoroughly…" (not "<b>Preheat</b> the oven")
+      }
+      const last = fbText(bolds[bolds.length - 1]);
+      if (last && last.length <= 60 && full.endsWith(last) && full.length > last.length && !/[.!?]$/.test(last)) {
+        const head = full.slice(0, full.length - last.length).trim();
+        if (/[.!?:]$/.test(head)) full = head;                         // "…15 minutes. <strong>Smoke the Turkey</strong>"
       }
     }
     return full;
@@ -1542,6 +1690,73 @@ a { color: var(--accent); }
       if (!found.length) fallbackSteps(doc).forEach(x => found.push(x));
     } catch (e) { console.warn('extractInstructionsFromHtml error:', e); }
     return uniqueOrdered(found);
+  }
+
+  function setExtractHint(msg) {
+    const hint = $('#extractErrorHint');
+    if (!hint) return;
+    hint.textContent = msg || '';
+    hint.style.display = msg ? 'block' : 'none';
+  }
+
+  // HTML race → parse; if nothing parsed (or every HTML route failed) → jina Markdown → text parser.
+  async function runExtract(url) {
+    let fetchErr = null, parseNote = '';
+    try {
+      const { body, label } = await fetchViaProxies(url);
+      const ings = extractIngredientsFromHtml(body);
+      const steps = extractInstructionsFromHtml(body);
+      if (ings.length || steps.length) return { ingredients: ings, steps, via: label };
+      parseNote = 'parse: ' + label + ' HTML had no recipe data, JSON-LD, or Ingredients heading';
+      console.warn('Extract:', parseNote);
+    } catch (e) {
+      fetchErr = e;
+    }
+    try {
+      const md = await fetchJinaMarkdown(url);
+      const res = parseRecipeText(md);
+      if (res.ingredients.length || res.steps.length) return { ...res, via: 'jina markdown' };
+      const why = res.botCheck ? 'jina markdown got a bot-check/CAPTCHA page' : 'markdown had no Ingredients/steps sections';
+      if (fetchErr) {
+        const all = new Error(String(fetchErr.message || fetchErr) + '; ' + why);
+        all.stage = 'fetch';
+        throw all;
+      }
+      parseNote = (parseNote ? parseNote + '; ' : 'parse: ') + why;
+    } catch (e) {
+      console.warn('Extract markdown fallback failed:', e && e.message);
+      if (fetchErr) {
+        const all = new Error(String(fetchErr.message || fetchErr) + '; ' + (e && e.message ? e.message : 'jina markdown failed'));
+        all.stage = 'fetch';
+        throw all;
+      }
+      parseNote = (parseNote || 'parse: no recipe found') + '; ' + (e && e.message ? e.message : 'markdown fallback failed');
+    }
+    const pe = new Error(parseNote || 'parse: no ingredients or steps found');
+    pe.stage = 'parse';
+    throw pe;
+  }
+
+  function applyExtracted(ings, steps, via) {
+    if (ings.length) {
+      const ta = $('#fIngredients');
+      if (ta) ta.value = (ta.value.trim() ? ta.value.replace(/\s*$/, '\n') : '') + ings.join('\n');
+    }
+    if (steps.length) {
+      const st = $('#fSteps');
+      if (st) st.value = (st.value.trim() ? st.value.replace(/\s*$/, '\n') : '') + steps.join('\n');
+    }
+    const proteinEl = $('#fProtein');
+    if (ings.length && proteinEl && !proteinEl.value && !ui.proteinManual) {
+      const detected = detectProteinFromIngredients(ings);
+      if (detected) applyProteinToForm(detected);
+    }
+    ui.lastExtractError = '';
+    setExtractHint('');
+    console.info('Extract ok via', via, '—', ings.length, 'ingredients,', steps.length, 'steps');
+    if (ings.length && steps.length) toast('Extracted ' + ings.length + ' ingredients and ' + steps.length + ' steps');
+    else if (ings.length) toast('Extracted ' + ings.length + ' ingredients (no steps found)');
+    else toast('Extracted ' + steps.length + ' steps (no ingredients found)');
   }
 
   function compressImage(file) {
@@ -2455,6 +2670,11 @@ a { color: var(--accent); }
         <div class="form-hint">Extract pulls ingredients &amp; steps from the URL when possible (Safari may block fetch).</div>
         <button class="btn btn-secondary btn-sm" type="button" id="extractBtn" style="margin-top:8px">Extract from URL</button>
         <div class="form-hint" id="extractErrorHint" style="display:none;color:var(--danger);margin-top:6px"></div>
+        <details class="paste-box" id="pasteBox">
+          <summary>Paste recipe text instead</summary>
+          <textarea id="fPasteText" placeholder="Copy the recipe from the page (Ingredients + steps) and paste here"></textarea>
+          <button class="btn btn-secondary btn-sm" type="button" id="pasteParseBtn">Split into ingredients &amp; steps</button>
+        </details>
       </div>
       <div class="form-group"><label for="fSteps">Cooking steps (one per line)</label>
         <textarea id="fSteps" placeholder="Enter text here">${esc(stepsTxt)}</textarea>
@@ -3290,36 +3510,10 @@ a { color: var(--accent); }
       const url = ($('#fUrl') || {}).value.trim();
       if (!url) { toast('Paste a URL first'); return; }
       const btn = e.target;
-      const hint = $('#extractErrorHint');
-      if (hint) { hint.style.display = 'none'; hint.textContent = ''; }
-      ui.lastExtractError = '';
+      setExtractHint('');
       btn.disabled = true; btn.textContent = 'Extracting…';
-      fetchViaProxies(url).then(html => {
-        const ings = extractIngredientsFromHtml(html);
-        const steps = extractInstructionsFromHtml(html);
-        if (!ings.length && !steps.length) {
-          const parseErr = new Error('parse: no ingredients or steps found (no JSON-LD, recipe markup, or Ingredients heading)');
-          parseErr.stage = 'parse';
-          throw parseErr;
-        }
-        if (ings.length) {
-          const ta = $('#fIngredients');
-          if (ta) ta.value = (ta.value ? ta.value.replace(/\s*$/, '\n') : '') + ings.join('\n');
-        }
-        if (steps.length) {
-          const st = $('#fSteps');
-          if (st) st.value = (st.value ? st.value.replace(/\s*$/, '\n') : '') + steps.join('\n');
-        }
-        const proteinEl = $('#fProtein');
-        if (ings.length && proteinEl && !proteinEl.value && !ui.proteinManual) {
-          const detected = detectProteinFromIngredients(ings);
-          if (detected) applyProteinToForm(detected);
-        }
-        ui.lastExtractError = '';
-        if (hint) { hint.style.display = 'none'; hint.textContent = ''; }
-        if (ings.length && steps.length) toast('Extracted ' + ings.length + ' ingredients and ' + steps.length + ' steps');
-        else if (ings.length) toast('Extracted ' + ings.length + ' ingredients (no steps found)');
-        else toast('Extracted ' + steps.length + ' steps (no ingredients found)');
+      runExtract(url).then(res => {
+        applyExtracted(res.ingredients, res.steps, res.via);
       }).catch(err => {
         console.error('Recipe extract failed:', err && err.message, err && err.stack ? '\n' + err.stack : err);
         const reason = (err && err.message) ? String(err.message) : 'unknown error';
@@ -3330,11 +3524,23 @@ a { color: var(--accent); }
           : ('Fetch failed: ' + reason.replace(/^fetch:\s*/i, ''));
         if (msg.length > 140) msg = msg.slice(0, 137) + '…';
         toast(msg);
-        if (hint) {
-          hint.style.display = 'block';
-          hint.textContent = 'Last error: ' + reason;
-        }
+        setExtractHint('Last error: ' + reason + ' — copy the recipe from the page and use “Paste recipe text” below.');
+        const pb = $('#pasteBox'); if (pb) pb.open = true;
       }).finally(() => { btn.disabled = false; btn.textContent = 'Extract from URL'; });
+      return;
+    }
+    if (e.target.id === 'pasteParseBtn') {
+      const ta = $('#fPasteText');
+      const txt = ta ? ta.value : '';
+      if (!txt.trim()) { toast('Paste the recipe text first'); return; }
+      const res = parseRecipeText(txt);
+      if (!res.ingredients.length && !res.steps.length) {
+        toast('Couldn’t split it — put “Ingredients” and “Instructions” on their own lines');
+        return;
+      }
+      applyExtracted(res.ingredients, res.steps, 'pasted text');
+      if (ta) ta.value = '';
+      const box = $('#pasteBox'); if (box) box.open = false;
       return;
     }
 
