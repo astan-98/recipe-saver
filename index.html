@@ -466,7 +466,7 @@ a { color: var(--accent); }
 </nav>
 
 <div class="sheet-backdrop" id="backdrop"></div>
-<!-- rs-build: 20261029-extract-robust-v4 -->
+<!-- rs-build: 20261029-inject-fix-v5 -->
 <div class="sheet" id="sheet" role="dialog" aria-modal="true">
   <div class="sheet-handle" id="sheetHandle" aria-hidden="true"></div>
   <div class="sheet-scroll" id="sheetScroll">
@@ -509,7 +509,7 @@ a { color: var(--accent); }
 
   const STORAGE_KEY = 'recipe-saver-v2';
   const LEGACY_KEY = 'recipe-saver-v1';
-  const UNITS = ['cups','cup','tablespoons','tablespoon','tbsp','teaspoons','teaspoon','tsp','pounds','pound','lbs','lb','ounces','ounce','oz','grams','gram','g','kilograms','kg','milliliters','ml','liters','liter','l','cloves','clove','slices','slice','cans','can','packages','package','pkg','pinch','pinches','dash','dashes','bunch','bunches','head','heads','stalks','stalk','pieces','piece','whole','large','medium','small'];
+  const UNITS = ['cups','cup','tablespoons','tablespoon','tbsp','teaspoons','teaspoon','tsp','pounds','pound','lbs','lb','ounces','ounce','oz','grams','gram','g','kilograms','kg','milliliters','ml','liters','liter','l','cloves','clove','slices','slice','cans','can','packages','package','pkg','pinch','pinches','dash','dashes','bunch','bunches','head','heads','stalks','stalk','pieces','piece','strips','strip','sticks','stick','sprigs','sprig','whole','large','medium','small'];
 
   const PROTEIN_OPTS = [
     { id: 'beef', label: 'Beef' },
@@ -1879,61 +1879,114 @@ a { color: var(--accent); }
     return '';
   }
 
-  function stepHasInlineQty(step, ing) {
-    const s = String(step || '');
-    const name = normName(ing.name || ing.raw);
-    if (!name) return false;
-    // If step already has a number near the ingredient name, treat as inline qty
-    const tokens = name.split(' ').filter(w => w.length > 2);
-    const needle = tokens.length ? tokens[tokens.length - 1] : name;
-    const re = new RegExp('(\\d+[\\d\\s\\/\\.]*\\s*(?:' + UNITS.join('|') + ')?\\s+)[^.]{0,40}' + needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-    if (re.test(s)) return true;
-    const re2 = new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[^.]{0,20}\\d', 'i');
-    return re2.test(s);
+  // ---- Inline quantity injection for cooking steps ----
+  // Words that describe size/prep/units, never the ingredient itself.
+  const INJ_STOP = new Set([
+    'large','small','medium','big','extra','jumbo','pieces','piece','slices','slice','strips','strip',
+    'chopped','diced','minced','sliced','shredded','grated','crushed','cubed','peeled','trimmed','halved',
+    'quartered','melted','softened','cooked','uncooked','raw','fresh','freshly','whole','ground','divided',
+    'optional','taste','into','cut','about','plus','more','for','and','the','with','such','additional',
+    'unsalted','salted','packed','heaping','level','room','temperature','finely','roughly','thinly','coarsely',
+    'cup','cups','tbsp','tsp','tablespoon','tablespoons','teaspoon','teaspoons','lb','lbs','pound','pounds',
+    'oz','ounce','ounces','can','cans','package','packages','pkg','pinch','dash','bunch','sprig','sprigs',
+    'stick','sticks','quart','quarts','pint','pints','gallon','ml','g','kg','liter','liters'
+  ].concat(UNITS));
+  const INJ_LEAD_UNITS = new Set(UNITS.concat(['strips','strip','sticks','stick','sprigs','sprig','quarts','quart','pints','pint','c','t']));
+  const INJ_PREP_BEFORE = /^(?:diced|chopped|minced|sliced|shredded|grated|crushed|cubed|peeled|cooked|crispy|crumbled|melted|softened|reserved|remaining|fresh)$/i;
+  const reEsc = s => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  // Clean ingredient → { qtyText, tokens, head } (parentheticals / ", prep" notes removed).
+  function injectionInfo(ing) {
+    if (!ing || ing.qty == null) return null;
+    let name = String(ing.name || '');
+    let prev;
+    do { prev = name; name = name.replace(/\([^()]*\)/g, ' '); } while (name !== prev);
+    name = name.replace(/[()]/g, ' ').replace(/,.*$/, '').replace(/[*]+/g, ' ');
+    let qtyText = formatQty(ing.qty);
+    let unit = ing.unit || '';
+    // "1/4 - 1/2 teaspoon …" → range
+    const range = /^\s*[-–]\s*(\d+(?:\s+\d+\/\d+|\/\d+|\.\d+)?)\s+/.exec(name);
+    if (range) {
+      const hi = parseFraction(range[1].split(/\s+/)[0]) + (range[1].includes(' ') ? (parseFraction(range[1].split(/\s+/)[1]) || 0) : 0);
+      if (Number.isFinite(hi)) qtyText += '–' + formatQty(hi);
+      name = name.slice(range[0].length);
+    }
+    let words = normName(name).split(' ').filter(Boolean);
+    // unit still at the front of the name ("strips …", "teaspoon* salt")
+    if (!unit && words.length > 1 && INJ_LEAD_UNITS.has(words[0])) { unit = words.shift(); }
+    else if (unit && ['large','medium','small','whole'].includes(unit) && words.length > 1 && INJ_LEAD_UNITS.has(words[0])) {
+      unit = unit + ' ' + words.shift();
+    }
+    const tokens = words.filter(w => w.length > 2 && !INJ_STOP.has(w));
+    if (!tokens.length || !qtyText) return null;
+    return { qtyText: [qtyText, unit].filter(Boolean).join(' '), tokens, head: tokens[tokens.length - 1] };
+  }
+  function pluralPattern(w) {
+    if (/ies$/.test(w) && w.length > 4) return reEsc(w.slice(0, -3)) + '(?:y|ies)';
+    if (/oes$/.test(w)) return reEsc(w.slice(0, -2)) + '(?:es)?';
+    if (/s$/.test(w) && !/ss$/.test(w) && w.length > 3) return reEsc(w.slice(0, -1)) + 's?';
+    if (/y$/.test(w)) return reEsc(w.slice(0, -1)) + '(?:y|ies)';
+    if (/o$/.test(w)) return reEsc(w) + '(?:es)?';
+    return reEsc(w) + '(?:es|s)?';
   }
 
+  // Build HTML once from plain text + non-overlapping ranges; never matches inside an injection.
   function injectQtyIntoStep(step, ingredients) {
-    let text = esc(String(step || ''));
-    const used = new Set();
-    (ingredients || []).forEach(ing => {
-      const name = ing.name || ing.raw || '';
-      if (!name || ing.qty == null) return;
-      const n = normName(name);
-      if (!n || used.has(n)) return;
-      if (stepHasInlineQty(text, ing)) return;
-      const tokens = n.split(' ').filter(w => w.length > 2);
-      // Prefer longest distinctive token match
-      let matched = false;
-      const candidates = [];
-      if (tokens.length) candidates.push(tokens.join(' '));
-      tokens.slice().reverse().forEach(t => candidates.push(t));
-      for (const cand of candidates) {
-        if (cand.length < 3) continue;
-        const re = new RegExp('\\b(the\\s+)?' + cand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i');
-        if (re.test(text)) {
-          const qtyBits = [formatQty(ing.qty), ing.unit].filter(Boolean).join(' ');
-          if (!qtyBits) break;
-          text = text.replace(re, (m) => '<span class="inj">' + qtyBits + ' ' + m.replace(/^the\s+/i, '') + '</span>');
-          used.add(n);
-          matched = true;
-          break;
+    const plain = String(step || '');
+    const cands = [];
+    (ingredients || []).forEach((ing, idx) => {
+      const info = injectionInfo(ing);
+      if (!info) return;
+      const phrases = [];
+      if (info.tokens.length > 1) phrases.push(info.tokens.join(' '));
+      phrases.push(info.head);
+      info.tokens.slice(0, -1).reverse().forEach(t => { if (t.length >= 4) phrases.push(t); });
+      phrases.forEach((ph, rank) => {
+        const parts = ph.split(' ');
+        const pat = parts.slice(0, -1).map(reEsc).concat(pluralPattern(parts[parts.length - 1])).join('[\\s-]+');
+        const re = new RegExp('\\b' + pat + '\\b', 'gi');
+        let m;
+        while ((m = re.exec(plain))) {
+          cands.push({ idx, info, start: m.index, end: m.index + m[0].length, len: ph.length, rank });
         }
-      }
-      if (!matched) {
-        // fuzzy: any significant word from ingredient name appears
-        for (const t of tokens) {
-          if (t.length < 4) continue;
-          const re = new RegExp('\\b(the\\s+)?' + t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\w*\\b', 'i');
-          if (re.test(text) && !stepHasInlineQty(text, ing)) {
-            const qtyBits = [formatQty(ing.qty), ing.unit].filter(Boolean).join(' ');
-            text = text.replace(re, (m) => '<span class="inj">' + qtyBits + ' ' + m.replace(/^the\s+/i, '') + '</span>');
-            used.add(n);
-            break;
-          }
-        }
-      }
+      });
     });
-    return text;
+    // longest phrase first, then earlier position
+    cands.sort((a, b) => (b.len - a.len) || (a.rank - b.rank) || (a.start - b.start));
+    const chosen = [];
+    const usedIng = new Set();
+    for (const c of cands) {
+      if (usedIng.has(c.idx)) continue;
+      if (chosen.some(o => c.start < o.end && o.start < c.end)) continue;
+      // widen start over prep adjectives ("diced potatoes") and absorb a leading "the"
+      let start = c.start, dropThe = false, partial = false;
+      for (;;) {
+        const before = plain.slice(0, start);
+        const w = /([A-Za-z]+)\s+$/.exec(before);
+        if (!w) break;
+        if (/^(remaining|reserved|leftover|rest)$/i.test(w[1])) { partial = true; break; }
+        if (INJ_PREP_BEFORE.test(w[1])) { start = before.length - w[0].length; continue; }
+        if (/^the$/i.test(w[1])) { dropThe = true; start = before.length - w[0].length; }
+        break;
+      }
+      if (partial) continue;
+      // "half of the bacon", "some of the cheese" → a portion, not the full amount
+      if (/\b(half|rest|some|part|portion|most|remainder|third|quarter)\s+of\s+(?:the\s+)?$/i.test(plain.slice(Math.max(0, start - 30), start))) continue;
+      if (chosen.some(o => start < o.end && o.start < c.end)) continue;
+      // already has a quantity right before it ("2 cups of broth", "6 bacon")
+      const lead = plain.slice(Math.max(0, start - 24), start);
+      if (/(?:\d|[½¼¾⅓⅔⅛])[\d\/.½¼¾⅓⅔⅛–-]*(?:\s+[a-z]+\.?)?\s+(?:of\s+)?$/i.test(lead)) continue;
+      chosen.push({ start, end: c.end, textStart: dropThe ? start + plain.slice(start).match(/^the\s+/i)[0].length : start, qty: c.info.qtyText });
+      usedIng.add(c.idx);
+    }
+    chosen.sort((a, b) => a.start - b.start);
+    let html = '', pos = 0;
+    chosen.forEach(c => {
+      html += esc(plain.slice(pos, c.start));
+      html += '<span class="inj">' + esc(c.qty) + ' ' + esc(plain.slice(c.textStart, c.end)) + '</span>';
+      pos = c.end;
+    });
+    return html + esc(plain.slice(pos));
   }
 
   function findSubstitution(ingName) {
