@@ -460,7 +460,7 @@ a { color: var(--accent); }
 </nav>
 
 <div class="sheet-backdrop" id="backdrop"></div>
-<!-- rs-build: 20261028-sheet-v2 -->
+<!-- rs-build: 20261029-extract-fallback-v3 -->
 <div class="sheet" id="sheet" role="dialog" aria-modal="true">
   <div class="sheet-handle" id="sheetHandle" aria-hidden="true"></div>
   <div class="sheet-scroll" id="sheetScroll">
@@ -1232,7 +1232,7 @@ a { color: var(--accent); }
       { label: 'proxy corsproxy', url: 'https://corsproxy.io/?' + encoded },
       { label: 'direct', url: url, direct: true }
     ];
-    let lastErr = null;
+    const failures = [];
     for (const attempt of attempts) {
       try {
         const ctrl = new AbortController();
@@ -1244,14 +1244,153 @@ a { color: var(--accent); }
         clearTimeout(t);
         if (!res.ok) throw classifyFetchError(null, attempt.label, res.status);
         const body = await res.text();
-        if (!body || body.length <= 40) throw new Error(attempt.label + ': empty response');
+        const upstream = /^\s*error code:\s*(\d+)/i.exec(body || '');
+        if (upstream) throw new Error(attempt.label + ': upstream error ' + upstream[1]);
+        if (!body || body.length <= 40) throw new Error(attempt.label + ': empty response (' + (body ? body.length : 0) + ' bytes)');
         return body;
       } catch (e) {
-        if (e && /^(proxy |direct)/.test(String(e.message || ''))) lastErr = e;
-        else lastErr = classifyFetchError(e, attempt.label);
+        const err = (e && /^(proxy |direct)/.test(String(e.message || ''))) ? e : classifyFetchError(e, attempt.label);
+        console.warn('Extract fetch attempt failed:', err.message);
+        failures.push(err.message);
       }
     }
-    throw lastErr || new Error('all fetch attempts failed');
+    const all = new Error('fetch: all attempts failed — ' + (failures.join('; ') || 'no attempts'));
+    all.stage = 'fetch';
+    throw all;
+  }
+
+  // ---- Generic heading-based fallback (blogs / Shopify articles without JSON-LD) ----
+  const FB_INGR_RE = /^(ingredients?|what you(?:'|’)?ll need)\s*:?$/i;
+  const FB_STEPS_RE = /^(instructions|directions|method|steps|preparation)\s*:?$/i;
+  const FB_TOOLS_RE = /^(tools|equipment)\s*:?$/i;
+  const FB_INLINE = new Set(['SPAN','STRONG','B','EM','I','U','A','FONT','SMALL','MARK']);
+  const FB_STOP_RE = /(^|[\s_-])(meta|share|social|comments?|related|author|tags|pagination|newsletter)([\s_-]|$)/i;
+  const FB_MIN_STEP = 25;
+
+  function fbText(el) {
+    return el ? String(el.textContent || '').replace(/\s+/g, ' ').trim() : '';
+  }
+  function fbScope(doc) {
+    return doc.querySelector('.article__content, .article-content, .rte, .entry-content, .post-content, article')
+      || doc.querySelector('main') || doc.body;
+  }
+  function fbInChrome(el) {
+    return !!(el.closest && el.closest('nav, header, footer, a, script, style, noscript, form'));
+  }
+  function fbBlockOf(el, scope) {
+    let b = el;
+    while (b.parentElement && b.parentElement !== scope && FB_INLINE.has(b.tagName)) b = b.parentElement;
+    return b;
+  }
+  function fbFindHeading(scope, re) {
+    const els = scope.querySelectorAll('h1,h2,h3,h4,h5,h6,p,strong,b,span,div');
+    for (const el of els) {
+      const txt = fbText(el);
+      if (!txt || txt.length > 40 || !re.test(txt)) continue;
+      if (fbInChrome(el)) continue;
+      return fbBlockOf(el, scope);
+    }
+    return null;
+  }
+  function fbIsStop(el) {
+    if (!el || el.nodeType !== 1) return false;
+    if (/^(FOOTER|ASIDE|NAV|FORM)$/.test(el.tagName)) return true;
+    const cls = (typeof el.className === 'string' ? el.className : '') + ' ' + (el.id || '');
+    return FB_STOP_RE.test(cls);
+  }
+  // Find the ul/ol that follows a heading block, walking up to the block ancestor if needed.
+  function fbListAfter(block, scope) {
+    let cur = block;
+    for (let depth = 0; cur && depth < 4; depth++) {
+      let sib = cur.nextElementSibling;
+      let hops = 0;
+      while (sib && hops < 5) {
+        if (sib.tagName === 'UL' || sib.tagName === 'OL') return sib;
+        const inner = sib.querySelector && sib.querySelector('ul, ol');
+        if (inner && fbText(sib) === fbText(inner)) return inner;
+        if (fbText(sib)) break; // other content before any list
+        sib = sib.nextElementSibling; hops++;
+      }
+      if (cur.parentElement === scope || !cur.parentElement) break;
+      cur = cur.parentElement;
+    }
+    return null;
+  }
+  function fbListItems(list) {
+    return Array.from(list.children)
+      .filter(li => li.tagName === 'LI')
+      .map(fbText)
+      .filter(Boolean);
+  }
+  // Block text with a leading short bold run (e.g. "<b>Brine<br></b>Thoroughly…") removed.
+  function fbStepText(el) {
+    const full = fbText(el);
+    if (!full) return '';
+    const bold = el.querySelector && el.querySelector('b, strong');
+    if (bold) {
+      const bt = fbText(bold);
+      if (bt && bt.length <= 40 && full.startsWith(bt)) {
+        const rest = full.slice(bt.length).trim();
+        if (rest) return rest;
+      }
+    }
+    return full;
+  }
+  function fbIngredientList(doc) {
+    const scope = fbScope(doc);
+    const scopes = scope === doc.body ? [scope] : [scope, doc.body];
+    for (const sc of scopes) {
+      const h = fbFindHeading(sc, FB_INGR_RE);
+      if (!h) continue;
+      const list = fbListAfter(h, sc);
+      if (list && fbListItems(list).length) return list;
+    }
+    return null;
+  }
+  function fallbackIngredients(doc) {
+    const list = fbIngredientList(doc);
+    return list ? fbListItems(list) : [];
+  }
+  // Collect steps from blocks following `start` (same container), skipping tools lists / short titles / media.
+  function fbCollectSteps(start) {
+    const out = [];
+    let skipNextList = false;
+    let el = start.nextElementSibling;
+    while (el) {
+      if (fbIsStop(el)) break;
+      const txt = fbText(el);
+      if (FB_TOOLS_RE.test(txt)) { skipNextList = true; el = el.nextElementSibling; continue; }
+      if (el.tagName === 'UL' || el.tagName === 'OL') {
+        if (!skipNextList) fbListItems(el).forEach(t => { if (t.length >= FB_MIN_STEP) out.push(t); });
+        skipNextList = false;
+        el = el.nextElementSibling; continue;
+      }
+      if (txt) skipNextList = false;
+      if (/^(H[1-6]|P|DIV|SECTION|BLOCKQUOTE)$/.test(el.tagName)) {
+        const st = fbStepText(el);
+        if (st.length >= FB_MIN_STEP) out.push(st);
+      }
+      el = el.nextElementSibling;
+    }
+    return out;
+  }
+  function fallbackSteps(doc) {
+    const scope = fbScope(doc);
+    const scopes = scope === doc.body ? [scope] : [scope, doc.body];
+    for (const sc of scopes) {
+      const h = fbFindHeading(sc, FB_STEPS_RE);
+      if (!h) continue;
+      const list = fbListAfter(h, sc);
+      if (list) {
+        const items = fbListItems(list);
+        if (items.length) return items;
+      }
+      const blocks = fbCollectSteps(h);
+      if (blocks.length) return blocks;
+    }
+    const ingList = fbIngredientList(doc);
+    if (ingList) return fbCollectSteps(ingList);
+    return [];
   }
 
   function extractIngredientsFromHtml(html) {
@@ -1291,7 +1430,8 @@ a { color: var(--accent); }
         });
         if (found.length) break;
       }
-    } catch (e) {}
+      if (!found.length) fallbackIngredients(doc).forEach(x => found.push(x));
+    } catch (e) { console.warn('extractIngredientsFromHtml error:', e); }
     return [...new Set(found)];
   }
 
@@ -1399,7 +1539,8 @@ a { color: var(--accent); }
         });
         if (found.length) break;
       }
-    } catch (e) {}
+      if (!found.length) fallbackSteps(doc).forEach(x => found.push(x));
+    } catch (e) { console.warn('extractInstructionsFromHtml error:', e); }
     return uniqueOrdered(found);
   }
 
@@ -3157,7 +3298,7 @@ a { color: var(--accent); }
         const ings = extractIngredientsFromHtml(html);
         const steps = extractInstructionsFromHtml(html);
         if (!ings.length && !steps.length) {
-          const parseErr = new Error('parse: no ingredients or steps found in page HTML (JSON-LD/microdata missing)');
+          const parseErr = new Error('parse: no ingredients or steps found (no JSON-LD, recipe markup, or Ingredients heading)');
           parseErr.stage = 'parse';
           throw parseErr;
         }
@@ -3183,11 +3324,11 @@ a { color: var(--accent); }
         console.error('Recipe extract failed:', err && err.message, err && err.stack ? '\n' + err.stack : err);
         const reason = (err && err.message) ? String(err.message) : 'unknown error';
         ui.lastExtractError = reason;
-        const emptyish = /no ingredients or steps found|no ingredients\/steps found/i.test(reason);
-        let msg = emptyish
-          ? ('Extract parse: ' + reason)
-          : ('Extract failed: ' + reason);
-        if (msg.length > 110) msg = msg.slice(0, 107) + '…';
+        const isParse = (err && err.stage === 'parse') || /^parse:/i.test(reason);
+        let msg = isParse
+          ? ('Page loaded but ' + reason.replace(/^parse:\s*/i, ''))
+          : ('Fetch failed: ' + reason.replace(/^fetch:\s*/i, ''));
+        if (msg.length > 140) msg = msg.slice(0, 137) + '…';
         toast(msg);
         if (hint) {
           hint.style.display = 'block';
