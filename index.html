@@ -360,6 +360,9 @@ a { color: var(--accent); }
   width: 88px; min-height: 40px; padding: 6px 8px; border-radius: 10px;
   border: 1px solid var(--border); background: var(--bg); text-align: right;
 }
+.rp-row { flex-wrap: wrap; padding: 10px 0; }
+.rp-row input[type=number] { min-height: 44px; font-size: 16px; }
+.rp-row select.rp-link { width: 100%; min-height: 44px; font-size: 16px; margin-top: 6px; background: var(--bg2); color: var(--text); border: 1px solid var(--border); border-radius: 10px; padding: 0 10px; }
 .price-row .pavg { font-size: .72rem; color: var(--text2); min-width: 64px; }
 .tonight-btn {
   width: 100%; min-height: 52px; margin-bottom: 12px; font-size: 1.02rem;
@@ -727,6 +730,7 @@ a { color: var(--accent); }
             mealPlan: parsed.mealPlan && typeof parsed.mealPlan === 'object' ? parsed.mealPlan : {},
             lastExportAt: parsed.lastExportAt || null,
             priceOverrides: parsed.priceOverrides && typeof parsed.priceOverrides === 'object' ? parsed.priceOverrides : {},
+            stapleLinks: parsed.stapleLinks && typeof parsed.stapleLinks === 'object' ? parsed.stapleLinks : {},
             shopList: Array.isArray(parsed.shopList) ? parsed.shopList.filter(x => x && x.key && x.text) : [],
             shopExcluded: Array.isArray(parsed.shopExcluded) ? parsed.shopExcluded : [],
             shopChecked: parsed.shopChecked && typeof parsed.shopChecked === 'object' ? parsed.shopChecked : {}
@@ -911,6 +915,8 @@ a { color: var(--accent); }
   function findStapleForName(name) {
     const n = normName(name);
     if (!n) return null;
+    const link = state.stapleLinks && state.stapleLinks[n];
+    if (link) { const ls = AVERAGE_PRICES.find(x => x.id === link); if (ls) return ls; }
     let best = null, bestScore = 0;
     for (const s of AVERAGE_PRICES) {
       for (const k of s.keys) {
@@ -1078,6 +1084,45 @@ a { color: var(--accent); }
       <div class="form-actions">
         <button class="btn btn-secondary" type="button" id="resetAllPricesBtn">Clear overrides</button>
         <button class="btn btn-primary" type="button" id="savePricesBtn">Save prices</button>
+      </div>`);
+  }
+
+  function openRecipePricesSheet(id) {
+    const r = state.recipes.find(x => x.id === id);
+    if (!r) return;
+    ui.sheetMode = 'recipePrices';
+    ui.editId = id;
+    const ings = (r.ingredients || []).filter(i => i && (i.name || i.raw));
+    const seen = new Set();
+    const opts = AVERAGE_PRICES.slice().sort((a, b) => a.name.localeCompare(b.name));
+    const rows = ings.map((i, idx) => {
+      const label = [i.qty != null ? formatQty(i.qty) : '', i.unit || '', i.name || i.raw].filter(Boolean).join(' ');
+      const st = findStapleForName(i.name || i.raw);
+      const nk = normName(i.name || i.raw);
+      const dup = st && seen.has(st.id);
+      if (st) seen.add(st.id);
+      const ov = st ? getOverridePrice(st.id) : null;
+      const est = ingredientEstimatedCost(i);
+      const picker = `<select class="rp-link" data-link-ing="${esc(nk)}" aria-label="Staple for ${esc(i.name || i.raw)}">
+          <option value="">${st ? 'Change staple…' : 'Link a staple…'}</option>
+          ${opts.map(o => `<option value="${esc(o.id)}"${st && st.id === o.id ? ' selected' : ''}>${esc(o.name)} (per ${esc(o.unit)})</option>`).join('')}
+        </select>`;
+      return `<div class="price-row rp-row">
+        <div style="flex:1;min-width:160px">
+          <div class="pname">${esc(label)}</div>
+          <div class="punit">${st ? `Staple: <strong>${esc(st.name)}</strong> · per ${esc(st.unit)} · avg ${esc(formatMoney(st.price))}${ov != null ? ' · using your price' : ''}${est ? ' · ≈' + esc(formatMoney(est.cost)) + ' here' : ''}` : 'No staple match — link one below or skip'}</div>
+        </div>
+        ${st ? (dup ? `<span class="pavg">same staple as above</span>` : `<input type="number" inputmode="decimal" min="0" step="0.01" data-rp-price-id="${esc(st.id)}" value="${ov != null ? esc(ov) : ''}" placeholder="${esc(st.price)}" aria-label="What you paid for ${esc(st.name)} per ${esc(st.unit)}">`) : ''}
+        ${picker}
+      </div>`;
+    }).join('');
+    openSheet(`
+      <h2>Prices for ${esc(r.name)}</h2>
+      <p class="form-hint" style="margin-bottom:8px">Enter what you paid per staple unit. Blank = US average. Your price applies to every recipe using that staple.</p>
+      <div>${rows || '<p class="form-hint">This recipe has no ingredients yet.</p>'}</div>
+      <div class="form-actions">
+        <button class="btn btn-secondary" type="button" id="rpBackBtn">Back</button>
+        <button class="btn btn-primary" type="button" id="saveRecipePricesBtn">Save prices</button>
       </div>`);
   }
 
@@ -2903,7 +2948,7 @@ a { color: var(--accent); }
       <div class="form-actions" style="margin:8px 0 4px">
         <button class="btn btn-primary btn-sm" type="button" id="startCookBtn">Cooking mode</button>
         <button class="btn btn-ghost btn-sm" type="button" id="detailCostBtn">${(() => { const ps = recipeCostPerServing(r); const src = recipeCostSource(r); if (src === 'manual') return esc(formatMoney(ps)) + '/serving · edit'; if (src === 'estimate') return '~' + esc(formatMoney(ps)) + '/serving · prices'; return 'Add cost'; })()}</button>
-        <button class="btn btn-ghost btn-sm" type="button" id="detailPricesBtn">Staple prices</button>
+        <button class="btn btn-secondary btn-sm" type="button" id="detailRecipePricesBtn">💲 Enter prices for these ingredients</button>
       </div>
       ${r.recipeCost != null ? `<p class="form-hint">Manual total ${esc(formatMoney(r.recipeCost))}</p>` : (estimateRecipeCost(r) ? `<p class="form-hint">Estimate from staple prices (~${esc(formatMoney(estimateRecipeCost(r).total))} total · ${esc(estimateRecipeCost(r).matched)} ingredients matched)</p>` : '')}
       <div class="section-title">Servings</div>
@@ -3367,6 +3412,17 @@ a { color: var(--accent); }
       const id = tonightId.dataset.tonightId;
       closeSheet();
       openDetail(id);
+      return;
+    }
+    if (e.target.id === 'detailRecipePricesBtn') { openRecipePricesSheet(ui.editId); return; }
+    if (e.target.id === 'rpBackBtn') { const id = ui.editId; closeSheet(); openDetail(id); return; }
+    if (e.target.id === 'saveRecipePricesBtn') {
+      let bad = 0;
+      $$('[data-rp-price-id]').forEach(inp => { if (!setPriceOverride(inp.dataset.rpPriceId, (inp.value || '').trim())) bad++; });
+      const id = ui.editId;
+      save(); renderAll();
+      openDetail(id);
+      toast(bad ? 'Saved (some prices invalid, skipped)' : 'Prices saved — cost estimate updated');
       return;
     }
     if (e.target.id === 'savePricesBtn') {
@@ -3890,6 +3946,16 @@ a { color: var(--accent); }
   state.recipes = state.recipes.map(normalizeRecipe);
   document.addEventListener('click', onClick);
   document.addEventListener('change', onChange);
+  document.addEventListener('change', (e) => {
+    const sel = e.target.closest && e.target.closest('[data-link-ing]');
+    if (!sel || !sel.value) return;
+    $$('[data-rp-price-id]').forEach(inp => setPriceOverride(inp.dataset.rpPriceId, (inp.value || '').trim()));
+    state.stapleLinks = state.stapleLinks || {};
+    state.stapleLinks[sel.dataset.linkIng] = sel.value;
+    save();
+    openRecipePricesSheet(ui.editId);
+    toast('Staple linked');
+  });
   document.addEventListener('input', (e) => {
     if (e.target.id === 'searchInput') { ui.search = e.target.value; renderRecipes(); }
     if (e.target.id === 'priceSearch') {
