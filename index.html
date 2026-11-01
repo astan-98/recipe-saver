@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Sous Chef" />
 <meta name="theme-color" content="#ff8c32" />
-  <link rel="manifest" href="manifest.json?v=20261101c" />
+  <link rel="manifest" href="manifest.json?v=20261101d" />
   <meta http-equiv="Cache-Control" content="no-cache" />
   <link rel="apple-touch-icon" href="apple-touch-icon.png" />
   <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
@@ -31,6 +31,11 @@
 }
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html { -webkit-text-size-adjust: 100%; }
+html, body { overscroll-behavior-y: contain; }
+#ptr { position: fixed; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 6px); z-index: 90; transform: translate(-50%, -70px); width: 40px; height: 40px; border-radius: 50%; background: var(--bg2); border: 1px solid var(--border); box-shadow: 0 4px 14px rgba(0,0,0,.18); display: flex; align-items: center; justify-content: center; pointer-events: none; opacity: 0; }
+#ptr .ptr-ring { width: 22px; height: 22px; border-radius: 50%; border: 3px solid var(--border); border-top-color: var(--accent, #2e7d32); }
+#ptr.spin .ptr-ring { animation: ptrspin .7s linear infinite; }
+@keyframes ptrspin { to { transform: rotate(360deg); } }
 body {
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   background: var(--bg); color: var(--text); min-height: 100dvh;
@@ -383,9 +388,10 @@ a { color: var(--accent); }
 </head>
 <body>
 
+<div id="ptr" aria-hidden="true"><div class="ptr-ring"></div></div>
 <header class="app-header">
   <h1>Recipe Saver</h1>
-  <div class="sub">Offline · no accounts · yours forever · v2026.11.01c</div>
+  <div class="sub">Offline · no accounts · yours forever · v2026.11.01d</div>
   <div class="header-actions" id="headerActions"></div>
 </header>
 
@@ -4104,6 +4110,58 @@ a { color: var(--accent); }
   load();
   state.recipes = state.recipes.map(normalizeRecipe);
   document.addEventListener('click', onClick);
+  // ---- Pull-to-refresh: fresh HTML from network in ~2s; localStorage untouched ----
+  (function initPullToRefresh() {
+    const el = document.getElementById('ptr');
+    if (!el) return;
+    const TH = 70, MAX = 110;
+    let y0 = null, dy = 0, busy = false;
+    const blocked = () => {
+      const sh = document.getElementById('sheet');
+      const cm = document.getElementById('cookMode');
+      return busy || (sh && sh.classList.contains('open')) || (cm && !cm.classList.contains('hidden')) || window.scrollY > 0;
+    };
+    const paint = (d, anim) => {
+      el.style.transition = anim ? 'transform .2s, opacity .2s' : 'none';
+      el.style.transform = `translate(-50%, ${Math.min(d, MAX) - 70}px)`;
+      el.style.opacity = d > 5 ? Math.min(1, d / TH) : 0;
+      el.querySelector('.ptr-ring').style.transform = busy ? '' : `rotate(${d * 4}deg)`;
+    };
+    document.addEventListener('touchstart', e => {
+      if (e.touches.length !== 1 || blocked()) { y0 = null; return; }
+      y0 = e.touches[0].clientY; dy = 0;
+    }, { passive: true });
+    document.addEventListener('touchmove', e => {
+      if (y0 == null) return;
+      if (blocked()) { y0 = null; paint(0, true); return; }
+      dy = (e.touches[0].clientY - y0) * 0.55;
+      if (dy > 0) { paint(dy); if (e.cancelable && dy > 10) e.preventDefault(); }
+    }, { passive: false });
+    document.addEventListener('touchend', () => {
+      if (y0 == null) return;
+      y0 = null;
+      if (dy >= TH) ptrRefresh(); else paint(0, true);
+      dy = 0;
+    });
+    function ptrRefresh() {
+      busy = true;
+      el.classList.add('spin');
+      el.querySelector('.ptr-ring').style.transform = '';
+      paint(TH + 20, true);
+      try { save(); } catch (e) {}
+      const url = location.pathname + '?v=' + Date.now();
+      const go = () => location.replace(url);
+      const ctl = window.AbortController ? new AbortController() : null;
+      const timer = setTimeout(() => { if (ctl) ctl.abort(); go(); }, 1800);
+      fetch(url, { cache: 'reload', signal: ctl ? ctl.signal : undefined })
+        .then(() => { clearTimeout(timer); go(); })
+        .catch(() => {
+          clearTimeout(timer);
+          if (!navigator.onLine) { busy = false; el.classList.remove('spin'); paint(0, true); toast('Offline — showing saved copy'); }
+          else go();
+        });
+    }
+  })();
   document.addEventListener('change', onChange);
   document.addEventListener('change', (e) => {
     const sel = e.target.closest && e.target.closest('[data-link-ing]');
