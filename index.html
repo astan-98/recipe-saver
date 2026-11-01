@@ -243,6 +243,10 @@ a { color: var(--accent); }
 .detail-photo { width: 100%; max-height: 280px; object-fit: cover; border-radius: 14px; margin-bottom: 12px; background: var(--bg3); }
 .scale-row { display: flex; align-items: center; gap: 10px; margin: 12px 0; }
 .scale-row button { width: 48px; height: 48px; border-radius: 14px; background: var(--bg3); font-size: 1.4rem; font-weight: 700; }
+.unit-toggle { display: inline-flex; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; margin: 4px 0 8px; }
+.unit-toggle button { min-height: 44px; padding: 0 14px; background: var(--bg3); color: var(--text); font-weight: 650; font-size: .9rem; border: 0; }
+.unit-toggle button.active { background: var(--accent, #2e7d32); color: #fff; }
+.cook-ings summary { cursor: pointer; padding: 8px 0; font-weight: 650; min-height: 44px; }
 .scale-row .val { font-size: 1.2rem; font-weight: 800; min-width: 48px; text-align: center; }
 .ing-list { list-style: none; }
 .ing-list li { padding: 8px 0; border-bottom: 1px solid var(--border); font-size: .95rem; }
@@ -499,6 +503,7 @@ a { color: var(--accent); }
     </div>
   </div>
   <div class="cook-step-wrap">
+    <div id="cookScaleBar"></div>
     <div class="cook-step-badge" id="cookStepBadge">Step 1 of 1</div>
     <div class="cook-step" id="cookStep" tabindex="0"></div>
   </div>
@@ -689,7 +694,8 @@ a { color: var(--accent); }
     sheetMode: null, editId: null, detailScale: null,
     pendingPhoto: null, ratingValue: null, pendingDifficulty: null,
     speechRec: null, listening: false,
-    cookMode: { recipeId: null, steps: [], index: 0 },
+    cookMode: { recipeId: null, steps: [], index: 0, servings: null },
+    unitSystem: (() => { try { return localStorage.getItem('rs_unitSystem') === 'metric' ? 'metric' : 'us'; } catch (e) { return 'us'; } })(),
     timers: [], timerTick: null,
     priceFilter: '',
     proteinManual: false,
@@ -893,6 +899,68 @@ a { color: var(--accent); }
     const q = ing.qty * factor;
     const bits = [formatQty(q), ing.unit, ing.name].filter(Boolean);
     return { ...ing, display: bits.join(' ') };
+  }
+
+  // ---- Display-only unit conversion (US ↔ metric). Stored data never changes. ----
+  const US_VOL_ML = { tsp:4.93, teaspoon:4.93, teaspoons:4.93, t:4.93, tbsp:14.79, tbs:14.79, tablespoon:14.79, tablespoons:14.79, T:14.79,
+    cup:236.6, cups:236.6, c:236.6, 'fl oz':29.57, floz:29.57, pint:473.2, pints:473.2, pt:473.2, quart:946.4, quarts:946.4, qt:946.4, gallon:3785, gallons:3785, gal:3785 };
+  const US_WT_G = { oz:28.35, ounce:28.35, ounces:28.35, lb:453.6, lbs:453.6, pound:453.6, pounds:453.6 };
+  const MET_VOL_ML = { ml:1, milliliter:1, milliliters:1, millilitre:1, millilitres:1, l:1000, liter:1000, liters:1000, litre:1000, litres:1000 };
+  const MET_WT_G = { g:1, gram:1, grams:1, kg:1000, kilogram:1000, kilograms:1000 };
+  function unitKey(u) { const k = String(u || '').trim().replace(/\.$/, ''); return k === 'T' ? 'T' : k.toLowerCase(); }
+  function roundNice(n) { return n >= 100 ? Math.round(n / 5) * 5 : n >= 10 ? Math.round(n) : Math.round(n * 10) / 10; }
+  function convertQtyUnit(qty, unit, system) {
+    if (qty == null || !Number.isFinite(Number(qty))) return { qty, unit, converted: false };
+    const k = unitKey(unit);
+    if (system === 'metric') {
+      if (US_VOL_ML[k] != null || US_VOL_ML[unit] != null) {
+        const ml = qty * (US_VOL_ML[unit] != null ? US_VOL_ML[unit] : US_VOL_ML[k]);
+        return ml >= 1000 ? { qty: Math.round(ml / 100) / 10, unit: 'L', converted: true } : { qty: roundNice(ml), unit: 'ml', converted: true };
+      }
+      if (US_WT_G[k] != null) {
+        const g = qty * US_WT_G[k];
+        return g >= 1000 ? { qty: Math.round(g / 100) / 10, unit: 'kg', converted: true } : { qty: roundNice(g), unit: 'g', converted: true };
+      }
+    } else {
+      if (MET_VOL_ML[k] != null) {
+        const ml = qty * MET_VOL_ML[k];
+        if (ml < 14) return { qty: Math.round(ml / 4.93 * 4) / 4, unit: 'tsp', converted: true };
+        if (ml < 59) return { qty: Math.round(ml / 14.79 * 2) / 2, unit: 'tbsp', converted: true };
+        if (ml >= 1893) return { qty: Math.round(ml / 946.4 * 4) / 4, unit: 'quart', converted: true };
+        return { qty: Math.round(ml / 236.6 * 4) / 4, unit: 'cup', converted: true };
+      }
+      if (MET_WT_G[k] != null) {
+        const g = qty * MET_WT_G[k];
+        return g >= 454 ? { qty: Math.round(g / 453.6 * 4) / 4, unit: 'lb', converted: true } : { qty: Math.round(g / 28.35 * 4) / 4, unit: 'oz', converted: true };
+      }
+    }
+    return { qty, unit, converted: false };
+  }
+  function fmtConvQty(q, unit) {
+    if (q == null) return '';
+    return /^(ml|L|g|kg)$/.test(unit) ? String(q) : formatQty(q);
+  }
+  // Scale first, then unit-system conversion. Returns a display copy of the ingredient.
+  function displayIngredient(ing, factor, system) {
+    if (!ing) return ing;
+    if (ing.qty == null || !Number.isFinite(Number(ing.qty))) return { ...ing };
+    const c = convertQtyUnit(Number(ing.qty) * (factor || 1), ing.unit || '', system || ui.unitSystem);
+    return { ...ing, qty: c.qty, unit: c.unit, qtyText: fmtConvQty(c.qty, c.unit) };
+  }
+  function convertTempsInText(text, system) {
+    const t = String(text || '');
+    if (system === 'metric') return t.replace(/(\d{2,3})\s*(?:°\s*F\b|º\s*F\b|degrees?\s*F(?:ahrenheit)?\b|F\b(?=\s*(?:oven|\.|,|\)|$)))/gi, (m, d) => Math.round((Number(d) - 32) * 5 / 9 / 5) * 5 + '°C');
+    return t.replace(/(\d{2,3})\s*(?:°\s*C\b|º\s*C\b|degrees?\s*C(?:elsius)?\b)/gi, (m, d) => Math.round((Number(d) * 9 / 5 + 32) / 5) * 5 + '°F');
+  }
+  function setUnitSystem(sys) {
+    ui.unitSystem = sys === 'metric' ? 'metric' : 'us';
+    try { localStorage.setItem('rs_unitSystem', ui.unitSystem); } catch (e) {}
+  }
+  function unitToggleHtml() {
+    return `<div class="unit-toggle" role="group" aria-label="Units">
+      <button type="button" data-unit-sys="us" class="${ui.unitSystem === 'us' ? 'active' : ''}" aria-pressed="${ui.unitSystem === 'us'}">Standard (US)</button>
+      <button type="button" data-unit-sys="metric" class="${ui.unitSystem === 'metric' ? 'active' : ''}" aria-pressed="${ui.unitSystem === 'metric'}">Metric</button>
+    </div>`;
   }
 
   function costLabel(c) {
@@ -1966,7 +2034,7 @@ a { color: var(--accent); }
     let prev;
     do { prev = name; name = name.replace(/\([^()]*\)/g, ' '); } while (name !== prev);
     name = name.replace(/[()]/g, ' ').replace(/,.*$/, '').replace(/[*]+/g, ' ');
-    let qtyText = formatQty(ing.qty);
+    let qtyText = ing.qtyText != null ? ing.qtyText : formatQty(ing.qty);
     let unit = ing.unit || '';
     // "1/4 - 1/2 teaspoon …" → range
     const range = /^\s*[-–]\s*(\d+(?:\s+\d+\/\d+|\/\d+|\.\d+)?)\s+/.exec(name);
@@ -2328,8 +2396,11 @@ a { color: var(--accent); }
       openEdit(id);
       return;
     }
+    const base = r.servingsDefault != null && r.servingsDefault > 0 ? r.servingsDefault : 4;
+    // One source of truth: the servings set on the detail sheet for this recipe.
+    const servings = (ui.editId === id && ui.detailScale) ? ui.detailScale : base;
     closeSheet();
-    ui.cookMode = { recipeId: id, steps, index: 0 };
+    ui.cookMode = { recipeId: id, steps, index: 0, servings };
     $('#cookMode').classList.remove('hidden');
     $('#cookTitle').textContent = r.name;
     paintCookStep();
@@ -2342,8 +2413,20 @@ a { color: var(--accent); }
     const steps = ui.cookMode.steps;
     const i = ui.cookMode.index;
     const raw = steps[i] || '';
-    const injected = injectQtyIntoStep(raw, r.ingredients || []);
+    const base = r.servingsDefault != null && r.servingsDefault > 0 ? r.servingsDefault : 4;
+    const servings = ui.cookMode.servings || base;
+    const factor = servings / base;
+    const scaledIngs = (r.ingredients || []).map(ing => displayIngredient(ing, factor));
+    const injected = injectQtyIntoStep(convertTempsInText(raw, ui.unitSystem), scaledIngs);
     $('#cookStep').innerHTML = injected;
+    const ctl = $('#cookScaleBar');
+    if (ctl) ctl.innerHTML = `<div class="scale-row" style="margin:6px 0">
+        <span style="font-size:.85rem;color:var(--text2)">Servings</span>
+        <button type="button" id="cookScaleMinus" aria-label="Fewer servings">−</button>
+        <div class="val" id="cookScaleVal">${esc(servings)}</div>
+        <button type="button" id="cookScalePlus" aria-label="More servings">+</button>
+      </div>${unitToggleHtml()}
+      <details class="cook-ings"><summary>Ingredients (${esc(servings)} servings)</summary><ul class="ing-list">${scaledIngs.map(d => `<li><span class="qty">${esc(d.qty != null ? (d.qtyText || '') : '')}</span>${esc(d.unit && d.qty != null ? d.unit + ' ' : '')}${esc(d.name || d.raw)}</li>`).join('')}</ul></details>`;
     const badge = 'Step ' + (i + 1) + ' of ' + steps.length;
     $('#cookProgress').textContent = (i + 1) + ' / ' + steps.length;
     const badgeEl = $('#cookStepBadge');
@@ -2371,7 +2454,7 @@ a { color: var(--accent); }
 
   function closeCookingMode() {
     $('#cookMode').classList.add('hidden');
-    ui.cookMode = { recipeId: null, steps: [], index: 0 };
+    ui.cookMode = { recipeId: null, steps: [], index: 0, servings: null };
   }
 
   function recipeNameCmp(a, b) {
@@ -2959,13 +3042,15 @@ a { color: var(--accent); }
       </div>
       <p class="form-hint">Original: ${esc(r.servingsDefault != null ? r.servingsDefault : 'not set (using 4)')}. Scaling is display-only — originals stay saved.</p>
       <div class="section-title">Ingredients</div>
+      ${unitToggleHtml()}
       <ul class="ing-list">${ings.length ? ings.map(i => {
         const key = normName(i.name || i.raw);
         const isMiss = missingSet.has(key);
-        const q = i.qty != null ? formatQty(i.qty * factor) : '';
+        const di = displayIngredient(i, factor);
+        const q = i.qty != null ? (di.qtyText || '') : '';
         const sug = isMiss ? substitutionForIngredient(r, i) : null;
         return `<li class="${isMiss ? 'missing-ing' : ''}">
-          <span class="qty">${esc(q)}</span>${esc(i.unit ? i.unit + ' ' : '')}${esc(i.name || i.raw)}
+          <span class="qty">${esc(q)}</span>${esc(di.unit ? di.unit + ' ' : '')}${esc(i.name || i.raw)}
           <button type="button" class="sub-btn" data-toggle-miss="${esc(r.id)}" data-ing="${esc(i.name || i.raw)}">${isMiss ? "Have it" : "Don't have"}</button>
           ${isMiss && sug ? `<div class="form-hint sug">→ ${esc(sug.text)}${sug.detail ? ' — ' + esc(sug.detail) : ''}</div>
             <div class="custom-row" style="display:flex;gap:6px;margin-top:6px">
@@ -3830,6 +3915,30 @@ a { color: var(--accent); }
     if (e.target.id === 'clearRecipeCostBtn') {
       const inp = $('#fRecipeCost');
       if (inp) inp.value = '';
+      return;
+    }
+    const unitBtn = e.target.closest && e.target.closest('[data-unit-sys]');
+    if (unitBtn) {
+      setUnitSystem(unitBtn.dataset.unitSys);
+      if (ui.cookMode.recipeId && !$('#cookMode').classList.contains('hidden')) paintCookStep();
+      else {
+        const r = state.recipes.find(x => x.id === ui.editId);
+        if (r && ui.sheetMode === 'detail') {
+          const sc = $('#sheetScroll'); const top = sc ? sc.scrollTop : 0;
+          paintDetail(r, ui.detailScale || (r.servingsDefault || 4));
+          if (sc) sc.scrollTop = top;
+        }
+      }
+      return;
+    }
+    if (e.target.id === 'cookScaleMinus' || e.target.id === 'cookScalePlus') {
+      const r = state.recipes.find(x => x.id === ui.cookMode.recipeId);
+      if (!r) return;
+      let sv = ui.cookMode.servings || (r.servingsDefault || 4);
+      sv = e.target.id === 'cookScaleMinus' ? Math.max(1, sv - 1) : sv + 1;
+      ui.cookMode.servings = sv;
+      if (ui.editId === r.id) ui.detailScale = sv; // keep detail in sync
+      paintCookStep();
       return;
     }
     if (e.target.id === 'startCookBtn') {
