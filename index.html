@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Sous Chef" />
 <meta name="theme-color" content="#ff8c32" />
-  <link rel="manifest" href="manifest.json?v=20261101b" />
+  <link rel="manifest" href="manifest.json?v=20261101c" />
   <meta http-equiv="Cache-Control" content="no-cache" />
   <link rel="apple-touch-icon" href="apple-touch-icon.png" />
   <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
@@ -385,7 +385,7 @@ a { color: var(--accent); }
 
 <header class="app-header">
   <h1>Recipe Saver</h1>
-  <div class="sub">Offline · no accounts · yours forever · v2026.11.01b</div>
+  <div class="sub">Offline · no accounts · yours forever · v2026.11.01c</div>
   <div class="header-actions" id="headerActions"></div>
 </header>
 
@@ -913,9 +913,55 @@ a { color: var(--accent); }
   const MET_WT_G = { g:1, gram:1, grams:1, kg:1000, kilogram:1000, kilograms:1000 };
   function unitKey(u) { const k = String(u || '').trim().replace(/\.$/, ''); return k === 'T' ? 'T' : k.toLowerCase(); }
   function roundNice(n) { return n >= 100 ? Math.round(n / 5) * 5 : n >= 10 ? Math.round(n) : Math.round(n * 10) / 10; }
-  function convertQtyUnit(qty, unit, system) {
+  // Dry ingredients: grams per US cup (standard baking approximations). Liquids keep ml.
+  const DRY_DENSITY = [
+    [/\b(bread|cake|pastry|whole wheat|almond|coconut|rye|self[- ]rising)?\s*flour\b/, 120, { 'bread flour':127, 'whole wheat flour':120, 'cake flour':114, 'almond flour':96, 'coconut flour':112 }],
+    [/\b(powdered|confectioners'?|icing) sugar\b/, 120],
+    [/\b(brown sugar|light brown|dark brown)\b/, 213],
+    [/\bsugar\b/, 200],
+    [/\bcocoa\b/, 85],
+    [/\bcornstarch|corn starch|arrowroot|tapioca starch\b/, 128],
+    [/\bbaking powder\b/, 192], [/\bbaking soda|bicarbonate\b/, 220],
+    [/\bkosher salt\b/, 240], [/\bsalt\b/, 288],
+    [/\bpowdered milk|milk powder|dry milk\b/, 68],
+    [/\bbutter\b(?!milk)/, 227], [/\bshortening|lard\b/, 205],
+    [/\brolled oats|oats|oatmeal\b/, 90],
+    [/\brice\b/, 185], [/\bquinoa\b/, 170], [/\bcornmeal|polenta|semolina\b/, 160],
+    [/\bbread ?crumbs|panko\b/, 60],
+    [/\bchocolate chips?\b/, 170], [/\b(walnuts?|pecans?|almonds?|nuts)\b/, 120],
+    [/\b(shredded|grated) (cheddar|mozzarella|cheese)|\bparmesan\b/, 100],
+    [/\braisins?\b/, 150], [/\b(yeast)\b/, 150], [/\bspice|cinnamon|paprika|cumin|chili powder|garlic powder|onion powder\b/, 110]
+  ];
+  const LIQUID_RE = /\b(milk|water|oil|broth|stock|cream|juice|vinegar|wine|honey|syrup|molasses|sauce|buttermilk|yogurt|beer|coffee|extract)\b/;
+  function dryGramsPerCup(name) {
+    const n = normName(name || '');
+    if (!n) return null;
+    if (LIQUID_RE.test(n) && !/\bpowder(ed)?\b|\bmilk powder\b/.test(n)) return null;
+    for (const [re, g, sub] of DRY_DENSITY) {
+      if (re.test(n)) {
+        if (sub) for (const k in sub) if (n.includes(k)) return sub[k];
+        return g;
+      }
+    }
+    return null;
+  }
+  const CUP_ML = 236.6;
+  function convertQtyUnit(qty, unit, system, name) {
     if (qty == null || !Number.isFinite(Number(qty))) return { qty, unit, converted: false };
     const k = unitKey(unit);
+    const gpc = dryGramsPerCup(name);
+    const volMl = US_VOL_ML[unit] != null ? US_VOL_ML[unit] : US_VOL_ML[k];
+    if (system === 'metric' && gpc && volMl != null) {
+      const g = qty * volMl / CUP_ML * gpc;
+      return g >= 1000 ? { qty: Math.round(g / 100) / 10, unit: 'kg', converted: true } : { qty: roundNice(g), unit: 'g', converted: true };
+    }
+    if (system !== 'metric' && gpc && MET_WT_G[k] != null) {
+      const cups = qty * MET_WT_G[k] / gpc;
+      const ml = cups * CUP_ML;
+      if (ml < 14) return { qty: Math.round(ml / 4.93 * 4) / 4, unit: 'tsp', converted: true };
+      if (ml < 59) return { qty: Math.round(ml / 14.79 * 2) / 2, unit: 'tbsp', converted: true };
+      return { qty: Math.round(cups * 4) / 4, unit: 'cup', converted: true };
+    }
     if (system === 'metric') {
       if (US_VOL_ML[k] != null || US_VOL_ML[unit] != null) {
         const ml = qty * (US_VOL_ML[unit] != null ? US_VOL_ML[unit] : US_VOL_ML[k]);
@@ -948,7 +994,7 @@ a { color: var(--accent); }
   function displayIngredient(ing, factor, system) {
     if (!ing) return ing;
     if (ing.qty == null || !Number.isFinite(Number(ing.qty))) return { ...ing };
-    const c = convertQtyUnit(Number(ing.qty) * (factor || 1), ing.unit || '', system || ui.unitSystem);
+    const c = convertQtyUnit(Number(ing.qty) * (factor || 1), ing.unit || '', system || ui.unitSystem, ing.name || ing.raw);
     return { ...ing, qty: c.qty, unit: c.unit, qtyText: fmtConvQty(c.qty, c.unit) };
   }
   function convertTempsInText(text, system) {
