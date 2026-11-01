@@ -7,7 +7,8 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Sous Chef" />
 <meta name="theme-color" content="#ff8c32" />
-  <link rel="manifest" href="manifest.json" />
+  <link rel="manifest" href="manifest.json?v=20261101b" />
+  <meta http-equiv="Cache-Control" content="no-cache" />
   <link rel="apple-touch-icon" href="apple-touch-icon.png" />
   <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
   <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
@@ -243,8 +244,10 @@ a { color: var(--accent); }
 .detail-photo { width: 100%; max-height: 280px; object-fit: cover; border-radius: 14px; margin-bottom: 12px; background: var(--bg3); }
 .scale-row { display: flex; align-items: center; gap: 10px; margin: 12px 0; }
 .scale-row button { width: 48px; height: 48px; border-radius: 14px; background: var(--bg3); font-size: 1.4rem; font-weight: 700; }
-.unit-toggle { display: inline-flex; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; margin: 4px 0 8px; }
-.unit-toggle button { min-height: 44px; padding: 0 14px; background: var(--bg3); color: var(--text); font-weight: 650; font-size: .9rem; border: 0; }
+.unit-row { display: flex !important; align-items: center; gap: 10px; margin: 10px 0 12px; width: 100%; }
+.unit-label { font-weight: 800; font-size: .95rem; color: var(--text); }
+.unit-toggle { display: flex !important; flex: 1; border: 2px solid var(--accent, #2e7d32); border-radius: 14px; overflow: hidden; }
+.unit-toggle button { flex: 1; min-height: 48px; padding: 0 10px; background: var(--bg3); color: var(--text); font-weight: 650; font-size: .9rem; border: 0; }
 .unit-toggle button.active { background: var(--accent, #2e7d32); color: #fff; }
 .cook-ings summary { cursor: pointer; padding: 8px 0; font-weight: 650; min-height: 44px; }
 .scale-row .val { font-size: 1.2rem; font-weight: 800; min-width: 48px; text-align: center; }
@@ -281,6 +284,7 @@ a { color: var(--accent); }
   flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column;
   overflow: hidden;
 }
+#cookScaleBar { flex-shrink: 0; max-height: 40vh; overflow: auto; }
 .cook-step-badge {
   flex-shrink: 0; align-self: flex-start;
   font-size: .78rem; font-weight: 800; letter-spacing: .03em; text-transform: uppercase;
@@ -381,7 +385,7 @@ a { color: var(--accent); }
 
 <header class="app-header">
   <h1>Recipe Saver</h1>
-  <div class="sub">Offline · no accounts · yours forever</div>
+  <div class="sub">Offline · no accounts · yours forever · v2026.11.01b</div>
   <div class="header-actions" id="headerActions"></div>
 </header>
 
@@ -957,10 +961,10 @@ a { color: var(--accent); }
     try { localStorage.setItem('rs_unitSystem', ui.unitSystem); } catch (e) {}
   }
   function unitToggleHtml() {
-    return `<div class="unit-toggle" role="group" aria-label="Units">
+    return `<div class="unit-row"><span class="unit-label">Units</span><div class="unit-toggle" role="group" aria-label="Units: Standard (US) or Metric">
       <button type="button" data-unit-sys="us" class="${ui.unitSystem === 'us' ? 'active' : ''}" aria-pressed="${ui.unitSystem === 'us'}">Standard (US)</button>
       <button type="button" data-unit-sys="metric" class="${ui.unitSystem === 'metric' ? 'active' : ''}" aria-pressed="${ui.unitSystem === 'metric'}">Metric</button>
-    </div>`;
+    </div></div>`;
   }
 
   function costLabel(c) {
@@ -3034,6 +3038,7 @@ a { color: var(--accent); }
         <button class="btn btn-secondary btn-sm" type="button" id="detailRecipePricesBtn">💲 Enter prices for these ingredients</button>
       </div>
       ${r.recipeCost != null ? `<p class="form-hint">Manual total ${esc(formatMoney(r.recipeCost))}</p>` : (estimateRecipeCost(r) ? `<p class="form-hint">Estimate from staple prices (~${esc(formatMoney(estimateRecipeCost(r).total))} total · ${esc(estimateRecipeCost(r).matched)} ingredients matched)</p>` : '')}
+      ${unitToggleHtml()}
       <div class="section-title">Servings</div>
       <div class="scale-row">
         <button type="button" id="scaleMinus" aria-label="Fewer servings">−</button>
@@ -3042,7 +3047,6 @@ a { color: var(--accent); }
       </div>
       <p class="form-hint">Original: ${esc(r.servingsDefault != null ? r.servingsDefault : 'not set (using 4)')}. Scaling is display-only — originals stay saved.</p>
       <div class="section-title">Ingredients</div>
-      ${unitToggleHtml()}
       <ul class="ing-list">${ings.length ? ings.map(i => {
         const key = normName(i.name || i.raw);
         const isMiss = missingSet.has(key);
